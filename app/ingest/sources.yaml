@@ -1,0 +1,17 @@
+# IRS publications, tax year 2024. Public domain.
+# NOTE: fill sha256 after first download with:  shasum -a 256 <file>
+- name: pub17
+  pub: "Pub. 17"
+  title: "Your Federal Income Tax (For Individuals)"
+  url: "https://www.irs.gov/pub/irs-pdf/p17.pdf"
+  sha256: "PENDING"
+- name: pub501
+  pub: "Pub. 501"
+  title: "Dependents, Standard Deduction, and Filing Information"
+  url: "https://www.irs.gov/pub/irs-pdf/p501.pdf"
+  sha256: "PENDING"
+- name: pub505
+  pub: "Pub. 505"
+  title: "Tax Withholding and Estimated Tax"
+  url: "https://www.irs.gov/pub/irs-pdf/p505.pdf"
+  sha256: "PENDING"

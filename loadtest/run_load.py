@@ -96,8 +96,9 @@ def write_report(result: dict, out_md: str = "docs/loadtest-results.md",
         "", "## Per-node mean (ms)", "",
         *[f"- {k}: {v}" for k, v in sorted(per_node.items(), key=lambda x: -x[1])],
         "", "## Bottleneck", "",
-        f"`{bottleneck}` dominates per-request time (mean {per_node.get(bottleneck, 0)} ms). "
-        "This is LLM generation on CPU via Ollama.",
+        f"`{bottleneck}` is the dominant per-request cost (mean {per_node.get(bottleneck, 0)} ms). "
+        "In `dummy` mode this is vector search over the embedded Chroma index; in `ollama` "
+        "mode LLM generation in `synthesize` typically dominates instead.",
         "", "## Optimization recommendations", "",
         "1. Cut LLM calls on the retrieval path: replace the `grade_docs` LLM grader with the "
         "score threshold only, and merge `expand_query` into a single call — removes ~2 LLM "

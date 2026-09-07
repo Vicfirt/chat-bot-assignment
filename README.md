@@ -52,8 +52,9 @@ validate` (plus `__start__` / `__end__`).
 - **calculate** — deterministic `estimate_tax(...)`. Tool #2 (non-retrieval);
   a no-op passthrough on the `rag_only` / `out_of_scope` routes.
 - **synthesize** — LLM composes a cited answer from context and/or calc result.
-- **validate** — checks citations and numeric consistency; triggers exactly one
-  retry of `synthesize` on failure.
+- **validate** — checks citations and numeric consistency; on failure it sends
+  exactly one retry back to `retrieve` (re-running retrieval -> calculate ->
+  synthesize), then ends regardless of the second result.
 
 ### RAG subgraph (separate compiled graph, `app/rag/subgraph.py`)
 
@@ -107,31 +108,34 @@ the deterministic calculator, not generation quality.
 
 Route accuracy and numeric accuracy are limited by the `dummy` LLM: triage and
 `tax_profile` extraction both depend on the model, and the stub returns fixed
-output. Under `LLM_MODE=ollama` with `llama3.2:3b` these rise substantially;
-retrieval hit rate and citation rate are model-independent and already strong.
+output. Under `LLM_MODE=ollama` with `llama3.2:3b` these are expected to
+improve; retrieval hit rate and citation rate are largely independent of
+generation quality (the RAG subgraph's `grade_docs` is itself an LLM grader).
 
-### Load test — `docs/loadtest-results.md` + `docs/loadtest-latency.png`
+### Load test — `docs/loadtest-results.md`
 
 100 requests, `LLM_MODE=dummy`, embedded Chroma warm, run at **concurrency 1**
 (see the caveat below).
 
 | p50 | p90 | p95 | p99 | mean | max | throughput |
 |-----|-----|-----|-----|------|-----|------------|
-| 37.6 ms | 68.5 ms | 74.1 ms | 147.0 ms | 88.2 ms | 5365.8 ms | 11.3 req/s |
+| 37.4 ms | 67.3 ms | 72.1 ms | 150.2 ms | 101.0 ms | 6700.6 ms | 9.9 req/s |
 
-`max` is the first (cold) request that loads the HNSW index into memory.
+`max` is the first (cold) request that loads the HNSW index into memory. A
+latency histogram is written to `docs/loadtest-latency.png` locally (gitignored).
 
-**Bottleneck node: `retrieve`** — mean 94.6 ms per request, essentially the
+**Bottleneck node: `retrieve`** — mean 108.8 ms per request, essentially the
 entire request budget (`triage`, `plan`, `calculate`, `synthesize`, `validate`
-are ~0 ms in `dummy` mode). In `ollama` mode `synthesize` becomes the dominant
-cost (LLM generation on CPU). Recommended optimizations:
+are ~0 ms in `dummy` mode). In `dummy` mode this cost is vector search over the
+embedded Chroma index; in `ollama` mode `synthesize` (LLM generation on CPU)
+typically dominates instead. Recommended optimizations:
 
 1. Cut LLM calls on the retrieval path: replace the `grade_docs` LLM grader
    with a score threshold and merge query expansion into a single call
    (~2 fewer LLM round-trips per request in `ollama` mode).
 2. Add a semantic response cache keyed on normalized question + route, and skip
-   the `validate` retry when the draft already has citations and the calc
-   number.
+   the `validate` -> `retrieve` retry when the draft already has citations and
+   the calc number.
 
 **Known issue — concurrency:** the API is served by a single `uvicorn` process
 with a synchronous `/chat` handler, so concurrent requests run on the thread

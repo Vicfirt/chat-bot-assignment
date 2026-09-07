@@ -1,17 +1,17 @@
 # Load Test Results
 
 - Requests: 100  |  Concurrency: 1  |  Errors: 0
-- Throughput: 11.33 req/s
+- Throughput: 9.89 req/s
 
 ## Latency (ms)
 
 | p50 | p90 | p95 | p99 | mean | max |
 |-----|-----|-----|-----|------|-----|
-| 37.6 | 68.5 | 74.1 | 147.0 | 88.2 | 5365.8 |
+| 37.4 | 67.3 | 72.1 | 150.2 | 101.0 | 6700.6 |
 
 ## Per-node mean (ms)
 
-- retrieve: 94.6
+- retrieve: 108.8
 - triage: 0.0
 - calculate: 0.0
 - synthesize: 0.0
@@ -20,7 +20,7 @@
 
 ## Bottleneck
 
-`retrieve` dominates per-request time (mean 94.6 ms). This is LLM generation on CPU via Ollama.
+`retrieve` is the dominant per-request cost (mean 108.8 ms). In `dummy` mode this is vector search over the embedded Chroma index; in `ollama` mode LLM generation in `synthesize` typically dominates instead.
 
 ## Optimization recommendations
 

@@ -9,3 +9,8 @@ data/chroma/
 *.egg-info/
 docs/loadtest-latency.png
 .DS_Store
+
+# Local planning artifacts — kept on disk, never published
+RAG- Project description- English.pdf
+docs/superpowers/
+.superpowers/

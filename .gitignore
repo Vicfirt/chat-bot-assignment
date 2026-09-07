@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+data/raw_pdfs/
+data/chroma/
+.pytest_cache/
+*.egg-info/
+docs/loadtest-latency.png
+.DS_Store

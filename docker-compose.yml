@@ -1,0 +1,106 @@
+services:
+  ollama:
+    image: ollama/ollama:0.3.14
+    volumes:
+      - ollama_models:/root/.ollama
+    ports:
+      - "11434:11434"
+
+  api:
+    build: .
+    environment:
+      LLM_MODE: ${LLM_MODE:-ollama}
+      LLM_MODEL: ${LLM_MODEL:-llama3.2:3b}
+      OLLAMA_BASE_URL: http://ollama:11434
+      CHROMA_DIR: /app/data/chroma
+      RAW_PDF_DIR: /app/data/raw_pdfs
+      LANGFUSE_ENABLED: ${LANGFUSE_ENABLED:-false}
+      LANGFUSE_HOST: http://langfuse-web:3000
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-000}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-000}
+    volumes:
+      - ./data:/app/data
+      - hf_cache:/home/app/.cache/huggingface
+    ports:
+      - "8000:8000"
+    depends_on:
+      - ollama
+
+  ui:
+    build: .
+    command: streamlit run app/ui/streamlit_app.py --server.port 8501 --server.address 0.0.0.0
+    environment:
+      API_URL: http://api:8000
+      LLM_MODE: ${LLM_MODE:-ollama}
+      LLM_MODEL: ${LLM_MODEL:-llama3.2:3b}
+    ports:
+      - "8501:8501"
+    depends_on:
+      - api
+
+  ingest:
+    build: .
+    profiles: ["ingest"]
+    command: python -m app.ingest.build_index
+    environment:
+      CHROMA_DIR: /app/data/chroma
+      RAW_PDF_DIR: /app/data/raw_pdfs
+    volumes:
+      - ./data:/app/data
+      - hf_cache:/home/app/.cache/huggingface
+
+  langfuse-db:
+    image: postgres:16
+    profiles: ["observability"]
+    environment:
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: langfuse
+      POSTGRES_DB: langfuse
+    volumes:
+      - langfuse_pg:/var/lib/postgresql/data
+
+  langfuse-web:
+    image: langfuse/langfuse:2
+    profiles: ["observability"]
+    environment:
+      DATABASE_URL: postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
+      NEXTAUTH_SECRET: dev-secret
+      SALT: dev-salt
+      NEXTAUTH_URL: http://localhost:3000
+      LANGFUSE_INIT_ORG_ID: demo
+      LANGFUSE_INIT_PROJECT_ID: demo
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-000}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-000}
+      LANGFUSE_INIT_USER_EMAIL: dev@example.com
+      LANGFUSE_INIT_USER_PASSWORD: dev-password
+    ports:
+      - "3000:3000"
+    depends_on:
+      - langfuse-db
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    profiles: ["observability"]
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    profiles: ["observability"]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+
+volumes:
+  ollama_models:
+  langfuse_pg:
+  hf_cache:

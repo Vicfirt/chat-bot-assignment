@@ -1,0 +1,105 @@
+- id: q01
+  question: "What is the standard deduction for a single filer in 2024?"
+  route_expected: rag_only
+  reference_answer: "The 2024 standard deduction for single filers is $14,600."
+  expected_sources: [{pub: "Pub. 501", section: "Standard Deduction"}]
+  expected_number: null
+  tolerance: null
+- id: q02
+  question: "What is the standard deduction for married filing jointly in 2024?"
+  route_expected: rag_only
+  reference_answer: "For 2024, married filing jointly standard deduction is $29,200."
+  expected_sources: [{pub: "Pub. 501", section: "Standard Deduction"}]
+  expected_number: null
+  tolerance: null
+- id: q03
+  question: "Who qualifies to file as head of household?"
+  route_expected: rag_only
+  reference_answer: "You must be unmarried, pay more than half the cost of keeping up a home, and have a qualifying person."
+  expected_sources: [{pub: "Pub. 501", section: "Filing Status"}]
+  expected_number: null
+  tolerance: null
+- id: q04
+  question: "What is a qualifying child for tax purposes?"
+  route_expected: rag_only
+  reference_answer: "A qualifying child must meet relationship, age, residency, support, and joint return tests."
+  expected_sources: [{pub: "Pub. 501", section: "Dependents"}]
+  expected_number: null
+  tolerance: null
+- id: q05
+  question: "When do I have to pay estimated tax?"
+  route_expected: rag_only
+  reference_answer: "You generally must pay estimated tax if you expect to owe at least $1,000 after withholding and credits."
+  expected_sources: [{pub: "Pub. 505", section: "Estimated Tax"}]
+  expected_number: null
+  tolerance: null
+- id: q06
+  question: "What are the federal income tax brackets for a single filer in 2024?"
+  route_expected: rag_only
+  reference_answer: "2024 single brackets: 10%, 12%, 22%, 24%, 32%, 35%, 37%."
+  expected_sources: [{pub: "Pub. 17", section: "2024 Tax Rate Schedules"}]
+  expected_number: null
+  tolerance: null
+- id: q07
+  question: "Can I claim my parent as a dependent?"
+  route_expected: rag_only
+  reference_answer: "A parent can be a qualifying relative if income and support tests are met; they need not live with you."
+  expected_sources: [{pub: "Pub. 501", section: "Dependents"}]
+  expected_number: null
+  tolerance: null
+- id: q08
+  question: "How much federal income tax do I owe on $85,000 of wages, filing single, 0 dependents, 2024?"
+  route_expected: rag_plus_calc
+  reference_answer: "Taxable income $70,400; federal income tax about $10,541."
+  expected_sources: [{pub: "Pub. 501", section: "Standard Deduction"}]
+  expected_number: 10541
+  tolerance: 25
+- id: q09
+  question: "Estimate my 2024 federal tax: married filing jointly, $150,000 income, 2 dependents."
+  route_expected: rag_plus_calc
+  reference_answer: "Taxable income $120,800; tax about $17,168."
+  expected_sources: [{pub: "Pub. 501", section: "Standard Deduction"}]
+  expected_number: 17168
+  tolerance: 60
+- id: q10
+  question: "I already know my taxable income is $50,000, single. What is my 2024 federal tax?"
+  route_expected: needs_calc
+  reference_answer: "About $6,053."
+  expected_sources: []
+  expected_number: 6053
+  tolerance: 1500
+- id: q11
+  question: "What is my effective federal tax rate on $200,000, single, 2024?"
+  route_expected: rag_plus_calc
+  reference_answer: "Effective rate roughly 19-20%."
+  expected_sources: [{pub: "Pub. 17", section: "2024 Tax Rate Schedules"}]
+  expected_number: null
+  tolerance: null
+- id: q12
+  question: "Does the standard deduction increase if I am 65 or older?"
+  route_expected: rag_only
+  reference_answer: "Yes, there is an additional standard deduction amount for taxpayers 65 or older or blind."
+  expected_sources: [{pub: "Pub. 501", section: "Standard Deduction"}]
+  expected_number: null
+  tolerance: null
+- id: q13
+  question: "What filing status should I use if my spouse died this year?"
+  route_expected: rag_only
+  reference_answer: "You can usually file married filing jointly for the year of death; qualifying surviving spouse may apply for two years after."
+  expected_sources: [{pub: "Pub. 501", section: "Filing Status"}]
+  expected_number: null
+  tolerance: null
+- id: q14
+  question: "What is the deadline for making estimated tax payments?"
+  route_expected: rag_only
+  reference_answer: "Estimated payments are generally due April 15, June 15, September 15, and January 15."
+  expected_sources: [{pub: "Pub. 505", section: "Estimated Tax"}]
+  expected_number: null
+  tolerance: null
+- id: q15
+  question: "What is the capital of France?"
+  route_expected: out_of_scope
+  reference_answer: "Out of scope."
+  expected_sources: []
+  expected_number: null
+  tolerance: null

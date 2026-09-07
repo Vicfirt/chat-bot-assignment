@@ -4,14 +4,14 @@
   pub: "Pub. 17"
   title: "Your Federal Income Tax (For Individuals)"
   url: "https://www.irs.gov/pub/irs-pdf/p17.pdf"
-  sha256: "PENDING"
+  sha256: "2d2381d62c7c77ed4b64b83ac23c28ed85b7c8304eb580c09bd9fd660be0840b"
 - name: pub501
   pub: "Pub. 501"
   title: "Dependents, Standard Deduction, and Filing Information"
   url: "https://www.irs.gov/pub/irs-pdf/p501.pdf"
-  sha256: "PENDING"
+  sha256: "288b62a4917f3bc3df0bade7a22c23a8ae648ba9eb5086df5b8b50e881148ff6"
 - name: pub505
   pub: "Pub. 505"
   title: "Tax Withholding and Estimated Tax"
   url: "https://www.irs.gov/pub/irs-pdf/p505.pdf"
-  sha256: "PENDING"
+  sha256: "c69e87caa93cdefa4493f0ec1d8478b1ff9ec1329ee18c7b9d442f2dcb79c621"

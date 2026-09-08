@@ -73,8 +73,25 @@ class ChromaRetriever:
             self._model = SentenceTransformer(self._model_name)
         return self._model
 
-    def _embed(self, texts: list[str]) -> list[list[float]]:
+    def _encode(self, texts: list[str]) -> list[list[float]]:
         return self._load_model().encode(texts, normalize_embeddings=True).tolist()
+
+    def _embed(self, texts: list[str]) -> list[list[float]]:
+        # Cache single-text (query) embeddings only; batch calls are ingestion.
+        from app.rag import cache
+
+        if len(texts) != 1 or not cache.enabled():
+            return self._encode(texts)
+        from app.observability.metrics import record_cache
+
+        key = (self._model_name, texts[0])
+        hit = cache._embedding_cache.get(key)
+        record_cache("embedding", hit is not None)
+        if hit is not None:
+            return [hit]
+        vec = self._encode(texts)
+        cache._embedding_cache.put(key, vec[0])
+        return vec
 
     def token_count(self, text: str) -> int:
         """Length of `text` in the embedding model's own tokens."""

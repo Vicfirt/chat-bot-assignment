@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     context_token_budget: int = 900
     max_retries: int = 1
 
+    # --- caching (in-process) ---
+    cache_enabled: bool = True
+    cache_embedding_size: int = 512           # query-embedding LRU entries
+    cache_rag_size: int = 256                 # RAG-subgraph result LRU entries
+
     # --- retrieval (all tunable) ---
     retrieval_mode: str = "hybrid"            # "hybrid" | "dense" | "bm25"
     dense_top_k: int = 20                     # candidates from the vector store

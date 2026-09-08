@@ -42,10 +42,25 @@ def build_rag_subgraph():
 
 def run_rag(question: str, chat_history: list[dict]) -> dict:
     global _compiled
+    # Retrieval keys on the question only — the subgraph does not use
+    # chat_history (expand_query reads state["question"] alone).
+    from app.observability.metrics import record_cache
+    from app.rag import cache
+
+    key = (cache.normalize_question(question), cache.index_fingerprint())
+    if cache.enabled():
+        hit = cache._rag_cache.get(key)
+        record_cache("rag", hit is not None)
+        if hit is not None:
+            return {"rag_context": hit["rag_context"], "citations": list(hit["citations"])}
+
     if _compiled is None:
         _compiled = build_rag_subgraph()
     final = _compiled.invoke(
         {"question": question, "chat_history": chat_history, "rounds": 0}
     )
-    return {"rag_context": final.get("rag_context", ""),
-            "citations": final.get("citations", [])}
+    out = {"rag_context": final.get("rag_context", ""),
+           "citations": final.get("citations", [])}
+    if cache.enabled():
+        cache._rag_cache.put(key, out)
+    return out

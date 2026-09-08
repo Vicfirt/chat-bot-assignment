@@ -28,6 +28,8 @@ LLM_TOKENS = Histogram(
 LLM_FALLBACK = Counter("rag_llm_fallback_total",
                        "Times the dummy LLM was used because Ollama was unreachable")
 
+CACHE_EVENTS = Counter("rag_cache_events_total", "In-process cache lookups", ["cache", "result"])
+
 
 def record_request(route: str, status: str, duration_s: float) -> None:
     REQUEST_DURATION.labels(route=route).observe(duration_s)
@@ -62,6 +64,10 @@ def time_llm_call(op: str, provider: str):
         yield
     finally:
         LLM_DURATION.labels(op=op).observe(time.perf_counter() - start)
+
+
+def record_cache(cache: str, hit: bool) -> None:
+    CACHE_EVENTS.labels(cache=cache, result="hit" if hit else "miss").inc()
 
 
 def record_llm_tokens(prompt_tokens: int | None, output_tokens: int | None) -> None:

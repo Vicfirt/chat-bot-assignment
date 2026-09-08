@@ -152,14 +152,23 @@ latency histogram is written to `docs/loadtest-latency.png` locally (gitignored)
 entire request budget (`triage`, `plan`, `calculate`, `synthesize`, `validate`
 are ~0 ms in `dummy` mode). In `dummy` mode this cost is vector search over the
 embedded Chroma index; in `ollama` mode `synthesize` (LLM generation on CPU)
-typically dominates instead. Recommended optimizations:
+typically dominates instead.
 
-1. Cut LLM calls on the retrieval path: replace the `grade_docs` LLM grader
-   with a score threshold and merge query expansion into a single call
-   (~2 fewer LLM round-trips per request in `ollama` mode).
-2. Add a semantic response cache keyed on normalized question + route, and skip
-   the `validate` -> `retrieve` retry when the draft already has citations and
-   the calc number.
+**Caching** (`app/rag/cache.py`, in-process, `CACHE_ENABLED=false` to disable):
+
+- **query-embedding LRU** — skips re-encoding a query string already seen
+  (expansion + domain hints make queries repeat).
+- **RAG-subgraph result LRU** — a repeated question skips the whole subgraph
+  (expansion LLM call + dense + BM25 + RRF + rerank).
+
+Both keys carry an `index_fingerprint()` (retrieval config + live chunk count),
+so a re-ingest or a knob change invalidates them automatically. Hit/miss counts
+are on `/metrics` as `rag_cache_events_total`.
+
+Further optimizations not done here: an end-to-end response cache keyed on
+normalized question + route (skips synthesis too); replacing the `grade_docs`
+step with a pure score threshold; and moving both caches to Redis so multiple
+API workers share them — which also unblocks the concurrency issue below.
 
 **Known issue — concurrency:** the API is served by a single `uvicorn` process
 with a synchronous `/chat` handler, so concurrent requests run on the thread

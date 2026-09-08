@@ -124,8 +124,13 @@ services:
   prometheus:
     image: prom/prometheus:v2.54.1
     profiles: ["observability"]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
     volumes:
       - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
     ports:
       - "9090:9090"
     depends_on:
@@ -140,6 +145,7 @@ services:
     volumes:
       - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
     ports:
       - "3001:3000"
     depends_on:
@@ -148,3 +154,5 @@ services:
 volumes:
   ollama_models:
   langfuse_pg:
+  prometheus_data:
+  grafana_data:

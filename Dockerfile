@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 HF_HOME=/home/app/.cache/huggingface
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/app HF_HOME=/home/app/.cache/huggingface
 
 RUN useradd -m app
 WORKDIR /app

@@ -13,6 +13,17 @@ _CALC_HINT = re.compile(
     r"tax (on|rate|bill|liability)|do i pay|what.s my tax)\b",
     re.I,
 )
+# Any hint that the question is actually about U.S. federal individual income
+# tax. Small local models sometimes label a plainly unrelated question
+# ("capital of France") as in-scope; if none of this vocabulary is present we
+# override to out_of_scope.
+_TAX_VOCAB = re.compile(
+    r"\b(tax(es|able|payer|ation)?|deduct\w*|withhold\w*|filing|file[sd]?\s+(a\s+)?return|"
+    r"depend[ae]nts?|exemptions?|income|irs|refunds?|brackets?|credits?|agi|1040|w-?2|"
+    r"publication|estimated|itemiz\w*|head of household|married|spouse|"
+    r"qualifying (child|relative|person|surviving)|wages?|earned income|capital gains?)\b",
+    re.I,
+)
 
 _SYS = (
     "Classify a user's message about U.S. federal income tax into one label:\n"
@@ -29,8 +40,12 @@ def triage(state: dict) -> dict:
     # A dollar figure plus a "how much do I owe" phrasing always needs the
     # calculator; small local models routinely misfile these as rag_only.
     q = state["question"]
-    if route == "rag_only" and _MONEY.search(q) and _CALC_HINT.search(q):
+    calc_signal = bool(_MONEY.search(q) and _CALC_HINT.search(q))
+    if route == "rag_only" and calc_signal:
         route = "rag_plus_calc"
+    # No tax vocabulary and no calculation signal -> it isn't a tax question.
+    if route != "out_of_scope" and not (_TAX_VOCAB.search(q) or calc_signal):
+        route = "out_of_scope"
     return {"route": route, **record_step("triage", start, f"route={route}")}
 
 

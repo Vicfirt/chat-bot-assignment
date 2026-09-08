@@ -23,6 +23,18 @@ def test_triage_forces_calc_for_dollar_amount_questions(monkeypatch):
     assert out["route"] == "rag_plus_calc"
 
 
+def test_triage_forces_out_of_scope_when_no_tax_vocabulary(monkeypatch):
+    from app.graph.nodes import triage as tri
+
+    class _Stub:
+        def classify(self, *a, **k):
+            return "rag_only"
+
+    monkeypatch.setattr(tri, "get_llm", lambda: _Stub())
+    out = tri.triage({"question": "What is the capital of France?", "chat_history": []})
+    assert out["route"] == "out_of_scope"
+
+
 def test_plan_extracts_tax_profile():
     out = plan({"question": "How much federal tax do I owe on $85,000, filing single, 0 dependents?",
                 "chat_history": [], "route": "rag_plus_calc"})

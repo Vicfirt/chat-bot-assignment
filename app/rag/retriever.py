@@ -4,6 +4,7 @@ on `app.config.Settings`.
 """
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, replace
 from typing import Protocol
@@ -11,6 +12,8 @@ from typing import Protocol
 import chromadb
 
 from app.config import get_settings
+
+_log = logging.getLogger(__name__)
 
 _TOKEN_RE = re.compile(r"[a-z0-9$%]+")
 _AMOUNT_RE = re.compile(
@@ -167,17 +170,20 @@ class HybridRetriever:
         s = get_settings()
         if not chunks:
             return []
-        if not s.rerank_enabled:
-            ranked = sorted(chunks, key=lambda c: c.score, reverse=True)
-            return self._boost_tables(question, ranked)[:k]
-        pool = chunks[: s.rerank_top_n]
-        raw = self._ensure_reranker().predict([(question, c.text) for c in pool])
-        rescored = sorted(
-            (replace(c, score=float(sc)) for c, sc in zip(pool, raw)),
-            key=lambda c: c.score, reverse=True,
-        )
-        kept = [c for c in rescored if c.score >= s.grade_min_score]
-        return self._boost_tables(question, kept)[:k]
+        if s.rerank_enabled:
+            try:
+                pool = chunks[: s.rerank_top_n]
+                raw = self._ensure_reranker().predict([(question, c.text) for c in pool])
+                rescored = sorted(
+                    (replace(c, score=float(sc)) for c, sc in zip(pool, raw)),
+                    key=lambda c: c.score, reverse=True,
+                )
+                kept = [c for c in rescored if c.score >= s.grade_min_score]
+                return self._boost_tables(question, kept)[:k]
+            except Exception as e:  # noqa: BLE001 - degrade to fused order, don't 500
+                _log.warning("reranker unavailable (%s); using fused order", e)
+        ranked = sorted(chunks, key=lambda c: c.score, reverse=True)
+        return self._boost_tables(question, ranked)[:k]
 
     # -- RRF fusion ----------------------------------------------------
     def _rrf(self, ranked_lists: list[list[Chunk]], k: int) -> list[Chunk]:

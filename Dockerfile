@@ -15,8 +15,10 @@ RUN python -c "from sentence_transformers import SentenceTransformer, CrossEncod
 SentenceTransformer('BAAI/bge-small-en-v1.5'); \
 CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')"
 
-# After the bake: never touch huggingface.co at runtime, load straight from cache.
-ENV HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+# After the bake: don't hit huggingface.co at runtime (models are cached).
+# Only HF_HUB_OFFLINE — TRANSFORMERS_OFFLINE pushes transformers into an
+# offline-load branch that meta-inits the cross-encoder and fails to materialize.
+ENV HF_HUB_OFFLINE=1
 
 COPY app ./app
 COPY eval ./eval

@@ -1,6 +1,7 @@
 FROM python:3.11-slim
 
-ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/app HF_HOME=/home/app/.cache/huggingface
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/app \
+    HF_HOME=/opt/hf-cache SENTENCE_TRANSFORMERS_HOME=/opt/hf-cache
 
 RUN useradd -m app
 WORKDIR /app
@@ -8,11 +9,15 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Bake the embedding model into the image so retrieval needs no runtime download.
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('BAAI/bge-small-en-v1.5')"
+
 COPY app ./app
 COPY eval ./eval
 COPY loadtest ./loadtest
 
-RUN mkdir -p /app/data/chroma /app/data/raw_pdfs && chown -R app:app /app
+RUN mkdir -p /app/data/chroma /app/data/raw_pdfs \
+    && chown -R app:app /app /opt/hf-cache
 USER app
 
 EXPOSE 8000 8501

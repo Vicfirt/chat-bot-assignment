@@ -50,7 +50,6 @@ services:
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-000}
     volumes:
       - ./data:/app/data
-      - hf_cache:/home/app/.cache/huggingface
     ports:
       - "8000:8000"
     depends_on:
@@ -86,7 +85,6 @@ services:
       RAW_PDF_DIR: /app/data/raw_pdfs
     volumes:
       - ./data:/app/data
-      - hf_cache:/home/app/.cache/huggingface
 
   langfuse-db:
     image: postgres:16
@@ -142,4 +140,3 @@ services:
 volumes:
   ollama_models:
   langfuse_pg:
-  hf_cache:

@@ -8,6 +8,7 @@ class RagState(TypedDict, total=False):
     chat_history: list[dict]
     queries: list[str]
     raw_hits: list[dict]
+    reranked_hits: list[dict]
     graded_hits: list[dict]
     rounds: int
     rag_context: str

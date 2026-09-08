@@ -1,5 +1,6 @@
 from app.rag.nodes.expand_query import expand_query
-from app.rag.nodes.vector_search import vector_search
+from app.rag.nodes.rerank import rerank
+from app.rag.nodes.retrieve_candidates import retrieve_candidates
 
 
 def test_expand_query_includes_original_and_counts_round():
@@ -16,19 +17,44 @@ def test_expand_query_adds_domain_hint_for_brackets():
     assert any("Tax Rate Schedules" in q for q in out["queries"])
 
 
-def test_vector_search_unions_and_dedupes(monkeypatch):
+def test_retrieve_candidates_unions_and_dedupes(monkeypatch):
     from app.rag import retriever as rmod
 
     class FakeRetriever:
-        def search(self, query, k):
+        def search_candidates(self, query, k):
             return [rmod.Chunk("a-1-0", "txt A", "Pub. 501", "S", 1, "u", 2024, 0.4 if "x" in query else 0.9),
                     rmod.Chunk("b-1-0", "txt B", "Pub. 505", "S", 1, "u", 2024, 0.2)]
 
     monkeypatch.setattr(rmod, "get_retriever", lambda: FakeRetriever())
-    out = vector_search({"queries": ["q1", "x q2"], "chat_history": [], "question": "q"})
+    out = retrieve_candidates({"queries": ["q1", "x q2"], "chat_history": [], "question": "q"})
     hits = {h["chunk_id"]: h for h in out["raw_hits"]}
     assert set(hits) == {"a-1-0", "b-1-0"}
     assert hits["a-1-0"]["score"] == 0.9
+
+
+def test_rerank_node_reorders_and_passes_through_without_reranker(monkeypatch):
+    from app.rag import retriever as rmod
+
+    raw = [{"chunk_id": "a", "text": "prose", "pub": "Pub. 501", "section": "S", "page": 1,
+            "source_url": "u", "tax_year": 2025, "score": 0.9, "block_type": "prose"},
+           {"chunk_id": "b", "text": "Married filing jointly | $29,200", "pub": "Pub. 501",
+            "section": "S", "page": 2, "source_url": "u", "tax_year": 2025, "score": 0.5,
+            "block_type": "table"}]
+
+    class WithReranker:
+        def rerank(self, question, chunks, k):
+            return list(reversed(chunks))
+
+    monkeypatch.setattr(rmod, "get_retriever", lambda: WithReranker())
+    out = rerank({"question": "mfj deduction", "raw_hits": raw})
+    assert [h["chunk_id"] for h in out["reranked_hits"]] == ["b", "a"]
+
+    class NoReranker:
+        pass
+
+    monkeypatch.setattr(rmod, "get_retriever", lambda: NoReranker())
+    out = rerank({"question": "q", "raw_hits": raw})
+    assert [h["chunk_id"] for h in out["reranked_hits"]] == ["a", "b"]
 
 
 def test_grade_docs_keeps_min_docs_even_below_threshold():

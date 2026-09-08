@@ -196,7 +196,9 @@ class HybridRetriever:
         fused = sorted(agg.values(), key=lambda t: t[0], reverse=True)[:k]
         return [replace(c, score=score) for score, c in fused]
 
-    def search(self, query: str, k: int) -> list[Chunk]:
+    def search_candidates(self, query: str, k: int) -> list[Chunk]:
+        """Dense + BM25 + RRF fusion, no rerank. This is the candidate pool the
+        `rerank` subgraph node consumes."""
         s = get_settings()
         where = {"tax_year": s.tax_year} if s.filter_tax_year else None
         lists: list[list[Chunk]] = []
@@ -209,8 +211,10 @@ class HybridRetriever:
             lists.append(bm)
         if not lists:
             return []
-        fused = self._rrf(lists, max(k, s.rerank_top_n)) if len(lists) > 1 else lists[0]
-        return self.rerank(query, fused, k)
+        return self._rrf(lists, max(k, s.rerank_top_n)) if len(lists) > 1 else lists[0]
+
+    def search(self, query: str, k: int) -> list[Chunk]:
+        return self.rerank(query, self.search_candidates(query, k), k)
 
 
 _retriever: Retriever | None = None

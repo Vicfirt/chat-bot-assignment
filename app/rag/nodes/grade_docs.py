@@ -5,10 +5,10 @@ from app.rag.state import RagState
 
 
 def grade_docs(state: RagState) -> dict:
-    # Candidates arrive already fused + reranked + score-filtered by the
-    # retriever; this node only enforces the floor and the min-docs count.
+    # Candidates arrive fused (retrieve_candidates) and cross-encoder reranked
+    # (rerank); this node only enforces the score floor and the min-docs count.
     s = get_settings()
-    hits = state.get("raw_hits", [])
+    hits = state.get("reranked_hits", state.get("raw_hits", []))
     kept = [h for h in hits if h["score"] >= s.grade_min_score]
     if len(kept) < s.min_docs:
         kept = hits[: s.min_docs]

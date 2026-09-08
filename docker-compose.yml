@@ -136,6 +136,26 @@ services:
     depends_on:
       - pushgateway
 
+  loki:
+    image: grafana/loki:3.1.1
+    profiles: ["observability"]
+    command: -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - ./observability/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki_data:/loki
+    ports:
+      - "3100:3100"
+
+  promtail:
+    image: grafana/promtail:3.1.1
+    profiles: ["observability"]
+    command: -config.file=/etc/promtail/promtail-config.yml
+    volumes:
+      - ./observability/promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
+
   grafana:
     image: grafana/grafana:11.2.0
     profiles: ["observability"]
@@ -150,9 +170,11 @@ services:
       - "3001:3000"
     depends_on:
       - prometheus
+      - loki
 
 volumes:
   ollama_models:
   langfuse_pg:
   prometheus_data:
   grafana_data:
+  loki_data:

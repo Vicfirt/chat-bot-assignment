@@ -221,7 +221,7 @@ LLM_MODE=dummy streamlit run app/ui/streamlit_app.py   # separate shell
 
 ```bash
 docker compose --profile observability up --build
-# Grafana http://localhost:3001 (anon)  |  Prometheus :9090
+# Grafana http://localhost:3001 (anon)  |  Prometheus :9090  |  Loki :3100
 # Pushgateway :9091  |  Langfuse :3000 (set LANGFUSE_ENABLED=true in .env)
 ```
 
@@ -252,6 +252,17 @@ before/after) → `rag.context` (citations, context words) → per-node `*.done`
 with timings → `api.request.completed`. `LOG_LEVEL=DEBUG` adds the heavy
 payloads; SSNs are redacted unless `LOG_PII=true`; `LOG_JSON=false` for plain
 text in local dev.
+
+In the observability profile, **Promtail** ships every container's stdout to
+**Loki**, wired into Grafana as a datasource. Trace one request in Grafana →
+Explore → Loki:
+
+```logql
+{service="api"} | json | request_id = `a1b2c3d4`
+```
+
+`container`, `service`, `level` and `stage` are indexed labels; `request_id`,
+`question`, `queries`, `top`, … are parsed from the JSON at query time.
 
 ### Tests / eval / load test
 

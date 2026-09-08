@@ -6,9 +6,12 @@ import time
 from app.graph.state import ROUTES, record_step
 from app.llm.provider import get_llm
 
-_MONEY = re.compile(r"\$\s?\d[\d,]*|\b\d{4,}\b")
+# A real money amount: a "$" figure, a comma-grouped number (85,000), or "60k".
+_MONEY = re.compile(r"\$\s?\d[\d,]*|\b\d{1,3}(,\d{3})+\b|\b\d+k\b", re.I)
 _CALC_HINT = re.compile(
-    r"\b(how much|owe|estimate|effective rate|tax on|do i pay|calculate)\b", re.I
+    r"\b(how much|owe|estimat\w*|calculat\w*|effective|marginal|"
+    r"tax (on|rate|bill|liability)|do i pay|what.s my tax)\b",
+    re.I,
 )
 
 _SYS = (
@@ -26,7 +29,7 @@ def triage(state: dict) -> dict:
     # A dollar figure plus a "how much do I owe" phrasing always needs the
     # calculator; small local models routinely misfile these as rag_only.
     q = state["question"]
-    if route in ("rag_only", "needs_calc") and _MONEY.search(q) and _CALC_HINT.search(q):
+    if route == "rag_only" and _MONEY.search(q) and _CALC_HINT.search(q):
         route = "rag_plus_calc"
     return {"route": route, **record_step("triage", start, f"route={route}")}
 

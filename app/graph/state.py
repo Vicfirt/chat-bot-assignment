@@ -28,6 +28,8 @@ class AgentState(TypedDict, total=False):
 
 
 def record_step(node: str, start: float, summary: str) -> dict:
-    return {"steps": [{"node": node,
-                       "duration_ms": round((time.perf_counter() - start) * 1000, 1),
-                       "summary": summary}]}
+    duration_ms = round((time.perf_counter() - start) * 1000, 1)
+    from app.observability.logging import log_event
+
+    log_event(node, "done", duration_ms=duration_ms, summary=summary)
+    return {"steps": [{"node": node, "duration_ms": duration_ms, "summary": summary}]}

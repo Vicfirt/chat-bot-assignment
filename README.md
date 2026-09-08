@@ -241,6 +241,18 @@ PROM_PUSHGATEWAY=localhost:9091 OLLAMA_BASE_URL=http://localhost:11434 \
   LLM_MODE=ollama python -m eval.run_eval      # results also land in Grafana
 ```
 
+### Structured logging
+
+`app/observability/logging.py` emits one JSON line per pipeline stage on stdout,
+all sharing a `request_id`, so a single `/chat` call is greppable end to end:
+`api.request.received` → `triage.routed` (llm route vs. final) → `rag.cache` →
+`expand_query.expanded` (the rewritten queries) → `retrieve_candidates.fused`
+(pool size + top `(chunk_id, pub, page, score)`) → `rerank.reranked` (scores
+before/after) → `rag.context` (citations, context words) → per-node `*.done`
+with timings → `api.request.completed`. `LOG_LEVEL=DEBUG` adds the heavy
+payloads; SSNs are redacted unless `LOG_PII=true`; `LOG_JSON=false` for plain
+text in local dev.
+
 ### Tests / eval / load test
 
 ```bash

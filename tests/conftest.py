@@ -3,6 +3,7 @@ import os
 import pytest
 
 os.environ.setdefault("LLM_MODE", "dummy")
+os.environ.setdefault("LOG_LEVEL", "WARNING")   # keep structured INFO logs out of test output
 
 
 @pytest.fixture(autouse=True)

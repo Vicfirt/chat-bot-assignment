@@ -49,6 +49,13 @@ def run_agent(question: str, chat_history: list[dict] | None = None,
     global _compiled
     if _compiled is None:
         _compiled = build_graph()
+
+    from app.observability.logging import configure_logging, get_request_id, new_request_id, set_request_id
+
+    configure_logging()
+    if get_request_id() == "-":
+        set_request_id(new_request_id())
+
     return _compiled.invoke(
         {"question": question, "chat_history": chat_history or [], "retry_count": 0},
         config={"callbacks": callbacks or [], "recursion_limit": 25},

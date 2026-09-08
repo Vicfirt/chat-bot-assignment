@@ -15,8 +15,16 @@ _compiled = None
 
 def _timed(name, fn):
     def run(state):
+        import time
+
+        from app.observability.logging import log_event
+
+        start = time.perf_counter()
         with time_subgraph_node(name):
-            return fn(state)
+            out = fn(state)
+        log_event(name, "done",
+                  duration_ms=round((time.perf_counter() - start) * 1000, 1))
+        return out
     return run
 
 
@@ -44,6 +52,7 @@ def run_rag(question: str, chat_history: list[dict]) -> dict:
     global _compiled
     # Retrieval keys on the question only — the subgraph does not use
     # chat_history (expand_query reads state["question"] alone).
+    from app.observability.logging import log_event
     from app.observability.metrics import record_cache
     from app.rag import cache
 
@@ -51,6 +60,7 @@ def run_rag(question: str, chat_history: list[dict]) -> dict:
     if cache.enabled():
         hit = cache._rag_cache.get(key)
         record_cache("rag", hit is not None)
+        log_event("rag", "cache", hit=hit is not None)
         if hit is not None:
             return {"rag_context": hit["rag_context"], "citations": list(hit["citations"])}
 
@@ -61,6 +71,9 @@ def run_rag(question: str, chat_history: list[dict]) -> dict:
     )
     out = {"rag_context": final.get("rag_context", ""),
            "citations": final.get("citations", [])}
+    log_event("rag", "context", n_citations=len(out["citations"]),
+              context_words=len(out["rag_context"].split()),
+              pages=[(c.get("pub"), c.get("page")) for c in out["citations"]])
     if cache.enabled():
         cache._rag_cache.put(key, out)
     return out

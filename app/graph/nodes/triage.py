@@ -40,12 +40,18 @@ def triage(state: dict) -> dict:
     # A dollar figure plus a "how much do I owe" phrasing always needs the
     # calculator; small local models routinely misfile these as rag_only.
     q = state["question"]
+    llm_route = route
     calc_signal = bool(_MONEY.search(q) and _CALC_HINT.search(q))
     if route == "rag_only" and calc_signal:
         route = "rag_plus_calc"
     # No tax vocabulary and no calculation signal -> it isn't a tax question.
     if route != "out_of_scope" and not (_TAX_VOCAB.search(q) or calc_signal):
         route = "out_of_scope"
+
+    from app.observability.logging import log_event
+
+    log_event("triage", "routed", question=q, llm_route=llm_route, route=route,
+              overridden=llm_route != route)
     return {"route": route, **record_step("triage", start, f"route={route}")}
 
 

@@ -52,6 +52,11 @@ class Settings(BaseSettings):
     index_drop_boilerplate: bool = True        # skip index / TOC / watermark pages
     index_numeric_density: float = 0.28        # page is "index-like" above this digit ratio
 
+    # --- logging ---
+    log_level: str = "INFO"
+    log_json: bool = True                     # structured JSON lines to stdout
+    log_pii: bool = False                     # if false, redact SSNs before logging
+
     langfuse_enabled: bool = False
     langfuse_host: str = "http://langfuse-web:3000"
     langfuse_public_key: str = ""

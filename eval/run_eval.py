@@ -47,8 +47,16 @@ def _rate(rows: list[dict], key: str) -> float:
 
 def run_eval(path: str = "eval/questions.yaml", out: str = "docs/eval-results.md",
              retrieval: bool = True) -> dict:
+    from app.observability.logging import configure_logging, new_request_id, set_request_id
+
+    configure_logging()
     items = load_eval_set(path)
-    rows = [score_item(item, run_agent(item["question"], [])) for item in items]
+
+    def _run(item: dict) -> dict:
+        set_request_id(f"eval-{item['id']}-{new_request_id()}")
+        return score_item(item, run_agent(item["question"], []))
+
+    rows = [_run(item) for item in items]
 
     agg = {"n": len(rows), "route_accuracy": _rate(rows, "route_ok"),
            "retrieval_hit_rate": _rate(rows, "retrieval_hit"), "citation_rate": _rate(rows, "has_citation"),

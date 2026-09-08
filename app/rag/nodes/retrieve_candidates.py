@@ -20,4 +20,12 @@ def retrieve_candidates(state: RagState) -> dict:
             prev = best.get(chunk.chunk_id)
             if prev is None or d["score"] > prev["score"]:
                 best[chunk.chunk_id] = d
-    return {"raw_hits": sorted(best.values(), key=lambda h: h["score"], reverse=True)}
+    pool = sorted(best.values(), key=lambda h: h["score"], reverse=True)
+
+    from app.observability.logging import log_event
+
+    log_event("retrieve_candidates", "fused", n_queries=len(state["queries"]),
+              pool_size=len(pool),
+              top=[(h["chunk_id"], h["pub"], h["page"], round(h["score"], 4))
+                   for h in pool[:5]])
+    return {"raw_hits": pool}

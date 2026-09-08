@@ -41,4 +41,9 @@ def expand_query(state: RagState) -> dict:
             queries.append(hint)
     if rounds >= 2:
         queries.append(f"{question} rule amount table IRS publication")
+
+    from app.observability.logging import log_event
+
+    log_event("expand_query", "expanded", question=question, queries=queries,
+              n=len(queries), round=rounds)
     return {"queries": queries, "rounds": rounds}

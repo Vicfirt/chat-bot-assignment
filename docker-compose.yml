@@ -5,6 +5,33 @@ services:
       - ollama_models:/root/.ollama
     ports:
       - "11434:11434"
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # One-shot: pull the configured model into the ollama volume, then exit.
+  # Skips the download in dummy mode, and never fails the stack — if the pull
+  # can't complete the API falls back to the dummy LLM (LLM_FALLBACK_DUMMY).
+  model-pull:
+    image: ollama/ollama:0.3.14
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >
+        if [ "${LLM_MODE:-ollama}" = "dummy" ]; then
+          echo "LLM_MODE=dummy - skipping model pull";
+        else
+          ollama pull "${LLM_MODEL:-llama3.2:3b}" ||
+          echo "model pull failed - API will fall back to the dummy LLM";
+        fi
+    restart: "no"
 
   api:
     build:
@@ -27,7 +54,10 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - ollama
+      ollama:
+        condition: service_started
+      model-pull:
+        condition: service_completed_successfully
 
   ui:
     build:

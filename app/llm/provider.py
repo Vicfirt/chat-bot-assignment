@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import logging
 from typing import Protocol
 
 from app.config import get_settings
 
+_log = logging.getLogger(__name__)
+
 CALC_MARKERS = ("how much", "owe", "calculate", "estimate", "take-home", "take home", "$")
 SCOPE_MARKERS = ("state tax", "corporate", "vat", "capital of", "weather")
+
+# Cached result of the one-time "is the configured Ollama model reachable?" probe.
+_ollama_ready: bool | None = None
 
 
 class LLMProvider(Protocol):
@@ -63,7 +69,30 @@ class OllamaLLM:
         return labels[0]
 
 
+def _ollama_model_reachable(base_url: str, model: str) -> bool:
+    """Probe the Ollama server once; cache the answer for the process."""
+    global _ollama_ready
+    if _ollama_ready is None:
+        try:
+            import ollama
+
+            models = ollama.Client(host=base_url, timeout=3.0).list().get("models", [])
+            have = {(m.get("model") or m.get("name") or "").split(":")[0] for m in models}
+            _ollama_ready = model.split(":")[0] in have
+            if not _ollama_ready:
+                _log.warning("Ollama at %s has no model matching %r (available: %s)",
+                             base_url, model, sorted(have) or "none")
+        except Exception as e:  # noqa: BLE001 - any failure means "not usable"
+            _log.warning("Ollama not reachable at %s: %s", base_url, e)
+            _ollama_ready = False
+    return _ollama_ready
+
+
 def get_llm() -> LLMProvider:
-    if get_settings().llm_mode == "dummy":
+    s = get_settings()
+    if s.llm_mode == "dummy":
+        return DummyLLM()
+    if s.llm_fallback_dummy and not _ollama_model_reachable(s.ollama_base_url, s.llm_model):
+        _log.warning("Falling back to the dummy LLM (set LLM_FALLBACK_DUMMY=false to fail hard)")
         return DummyLLM()
     return OllamaLLM()

@@ -9,6 +9,9 @@ class Settings(BaseSettings):
     llm_mode: str = "ollama"
     llm_model: str = "llama3.2:3b"
     ollama_base_url: str = "http://ollama:11434"
+    # When llm_mode="ollama" but the model/server is unreachable, use the dummy LLM
+    # instead of failing every request. Set false to surface the error hard.
+    llm_fallback_dummy: bool = True
 
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     chroma_dir: str = "data/chroma"

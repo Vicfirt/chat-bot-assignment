@@ -7,7 +7,13 @@ def test_expand_query_includes_original_and_counts_round():
                         "rounds": 0})
     assert out["queries"][0] == "standard deduction for single"
     assert out["rounds"] == 1
-    assert len(out["queries"]) <= 3
+    assert len(out["queries"]) <= 5
+
+
+def test_expand_query_adds_domain_hint_for_brackets():
+    out = expand_query({"question": "what are the tax brackets for a single filer",
+                        "chat_history": [], "rounds": 0})
+    assert any("Tax Rate Schedules" in q for q in out["queries"])
 
 
 def test_vector_search_unions_and_dedupes(monkeypatch):

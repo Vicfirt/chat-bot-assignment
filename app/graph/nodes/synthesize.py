@@ -25,7 +25,7 @@ def synthesize(state: dict) -> dict:
         parts.append(f"CONTEXT:\n{state['rag_context']}")
     if state.get("calc_result") and "error" not in state["calc_result"]:
         parts.append(f"CALC:\n{json.dumps(state['calc_result'], indent=2)}")
-    answer = get_llm().complete("\n\n".join(parts), system=_SYS, max_tokens=600).strip()
+    answer = get_llm().complete("\n\n".join(parts), system=_SYS, max_tokens=220).strip()
     answer += _DISCLAIMER
     return {"draft_answer": answer, "final_answer": answer,
             **record_step("synthesize", start, f"{len(answer)} chars")}

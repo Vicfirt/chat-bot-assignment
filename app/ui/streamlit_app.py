@@ -9,7 +9,7 @@ from app.config import get_settings
 def call_api(question: str, history: list[dict], api_url: str,
              client: httpx.Client | None = None) -> dict:
     owns = client is None
-    client = client or httpx.Client(timeout=120)
+    client = client or httpx.Client(timeout=300)
     try:
         resp = client.post(f"{api_url}/chat",
                            json={"question": question, "chat_history": history})

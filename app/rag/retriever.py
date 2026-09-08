@@ -35,21 +35,29 @@ class ChromaRetriever:
         self._model_name = embedding_model or s.embedding_model
         self._model = None
 
-    def _embed(self, texts: list[str]) -> list[list[float]]:
+    def _load_model(self):
         if self._model is None:
             from sentence_transformers import SentenceTransformer
 
             self._model = SentenceTransformer(self._model_name)
-        return self._model.encode(texts, normalize_embeddings=True).tolist()
+        return self._model
+
+    def _embed(self, texts: list[str]) -> list[list[float]]:
+        return self._load_model().encode(texts, normalize_embeddings=True).tolist()
+
+    def token_count(self, text: str) -> int:
+        """Length of `text` in the embedding model's own tokens."""
+        return len(self._load_model().tokenizer.encode(text, add_special_tokens=False))
 
     def add_chunks(self, chunks: list[dict]) -> None:
         if not chunks:
             return
+        keys = ("pub", "section", "page", "source_url", "tax_year")
         self._collection.upsert(
             ids=[c["chunk_id"] for c in chunks],
             documents=[c["text"] for c in chunks],
             embeddings=self._embed([c["text"] for c in chunks]),
-            metadatas=[{k: c[k] for k in ("pub", "section", "page", "source_url", "tax_year")}
+            metadatas=[{**{k: c[k] for k in keys}, "block_type": c.get("block_type", "prose")}
                        for c in chunks],
         )
 

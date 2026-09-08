@@ -59,11 +59,15 @@ validate` (plus `__start__` / `__end__`).
 ### RAG subgraph (separate compiled graph, `app/rag/subgraph.py`)
 
 ```
-expand_query --> vector_search --> grade_docs --(loop: broaden & retry | continue)--> assemble_context
+expand_query --> retrieve_candidates --> rerank --> grade_docs --(loop: broaden & retry | continue)--> assemble_context
 ```
 
-Compiled node set (verified): `expand_query, vector_search, grade_docs,
-assemble_context` (plus `__start__` / `__end__`).
+Compiled node set (verified): `expand_query, retrieve_candidates, rerank,
+grade_docs, assemble_context` (plus `__start__` / `__end__`). Each node is one
+named RAG subsystem: query expansion (LLM + deterministic domain hints),
+candidate retrieval (dense + BM25 + RRF fusion), cross-encoder reranking (with
+a table-first boost for amount questions), relevance grading, and context
+assembly with citations.
 
 ### Tools
 
@@ -92,25 +96,37 @@ Both artifacts below are generated, not hand-written:
 `LLM_MODE=dummy python -m eval.run_eval` and
 `LLM_MODE=dummy python -m loadtest.run_load`.
 
-### Functional evaluation — `docs/eval-results.md`
+### Functional evaluation — `docs/eval-results.md` (+ `.json`)
 
-15 questions spanning all four routes. Run in `LLM_MODE=dummy`, so answer
-wording comes from the stub LLM; these numbers measure routing, retrieval, and
-the deterministic calculator, not generation quality.
+16 questions spanning all four routes. `run_eval` writes both a markdown table
+and a machine-readable `docs/eval-results.json`.
 
-| Metric | Result |
+| Metric | `ollama` / `llama3.2:3b` |
 |--------|--------|
-| Route accuracy | 66.7% (10/15) |
-| Retrieval hit rate | 80.0% |
-| Citation rate | 86.7% |
-| Numeric accuracy (calc questions) | 33.3% |
-| Keyword hit rate | 53.3% |
+| Route accuracy | see `docs/eval-results.md` |
+| Retrieval hit rate (cited pub matches expected) | " |
+| Citation rate | " |
+| Numeric accuracy (calc questions) | " |
+| Keyword hit rate (brittle substring proxy) | " |
 
-Route accuracy and numeric accuracy are limited by the `dummy` LLM: triage and
-`tax_profile` extraction both depend on the model, and the stub returns fixed
-output. Under `LLM_MODE=ollama` with `llama3.2:3b` these are expected to
-improve; retrieval hit rate and citation rate are largely independent of
-generation quality (the RAG subgraph's `grade_docs` is itself an LLM grader).
+Route accuracy and `tax_profile` extraction depend on the LLM, so run under
+`LLM_MODE=ollama`; retrieval hit rate and citation rate are largely independent
+of generation quality.
+
+### Retrieval quality — `## Retrieval quality` section of the same file
+
+Judged at `(publication, page)` granularity against the `relevant_pages` labels
+in `eval/questions.yaml`, by invoking the RAG subgraph directly and reading its
+`raw_hits` (post RRF fusion) → `reranked_hits` (post cross-encoder) →
+`graded_hits` (kept for the prompt).
+
+| Metric | Meaning |
+|--------|---------|
+| `precision_at_k`, `recall_at_k` | of the reranked top-k (k = `search_k`) |
+| `mrr` | mean reciprocal rank of the first relevant page |
+| `context_precision` | fraction of the assembled context that is relevant |
+| `mrr_fused` vs `mrr_reranked`, `rerank_mrr_lift` | the ranking gain the `rerank` node adds over pure RRF |
+| `hit_rate_fused` vs `hit_rate_reranked`, `rerank_hit_lift` | same, as a top-k hit rate |
 
 ### Load test — `docs/loadtest-results.md`
 
@@ -188,14 +204,30 @@ LLM_MODE=dummy streamlit run app/ui/streamlit_app.py   # separate shell
 
 ```bash
 docker compose --profile observability up --build
-# Grafana http://localhost:3001 (anon)  |  Prometheus :9090  |  Langfuse :3000
-# set LANGFUSE_ENABLED=true in .env to emit traces
+# Grafana http://localhost:3001 (anon)  |  Prometheus :9090
+# Pushgateway :9091  |  Langfuse :3000 (set LANGFUSE_ENABLED=true in .env)
+```
+
+The API exposes Prometheus metrics at `/metrics`; the provisioned Grafana
+dashboard ("Agentic RAG Tax Chatbot") shows:
+
+| Group | Metrics |
+|-------|---------|
+| Request | `rag_request_duration_seconds` (p95 by route), `rag_requests_total` (throughput, error ratio) |
+| Graph | `rag_node_duration_seconds` (6 main nodes), `rag_subgraph_node_duration_seconds` (5 RAG nodes), `rag_validate_retries_total` |
+| LLM | `rag_llm_duration_seconds` (p95 by op), `rag_llm_calls_total` (by op), `rag_llm_tokens` (prompt/output), `rag_llm_fallback_total` (Ollama-unreachable → dummy) |
+| Retrieval | `rag_context_words`, `rag_retrieval_chunks` |
+| Offline eval | `rag_eval_*` gauges — `run_eval` pushes route accuracy, retrieval hit rate, Precision@k, Recall@k, MRR and rerank lift to the pushgateway when `PROM_PUSHGATEWAY` is set |
+
+```bash
+PROM_PUSHGATEWAY=localhost:9091 OLLAMA_BASE_URL=http://localhost:11434 \
+  LLM_MODE=ollama python -m eval.run_eval      # results also land in Grafana
 ```
 
 ### Tests / eval / load test
 
 ```bash
-make test                                              # LLM_MODE=dummy python -m pytest -q  (47 tests)
+make test                                              # LLM_MODE=dummy python -m pytest -q
 LLM_MODE=dummy python -m eval.run_eval                  # writes docs/eval-results.md
 LLM_MODE=dummy python -m loadtest.run_load --api-url http://localhost:8000 --n 100 --concurrency 1
 # API must be running; see the concurrency caveat above before raising --concurrency

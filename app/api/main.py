@@ -7,7 +7,13 @@ from pydantic import BaseModel, Field
 
 from app.config import get_settings
 from app.graph.main_graph import run_agent
-from app.observability.metrics import RETRIEVAL_CHUNKS, metrics_asgi_app, record_request, record_steps
+from app.observability.metrics import (
+    RETRIEVAL_CHUNKS,
+    metrics_asgi_app,
+    record_context,
+    record_request,
+    record_steps,
+)
 from app.observability.tracing import get_langfuse_callbacks
 
 app = FastAPI(title="Agentic RAG Tax Chatbot")
@@ -54,6 +60,7 @@ def chat(req: ChatRequest) -> ChatResponse:
 
     record_request(route, "ok", total_ms / 1000.0)
     record_steps(steps)
+    record_context(state.get("rag_context", ""))
     RETRIEVAL_CHUNKS.observe(len(citations))
 
     return ChatResponse(

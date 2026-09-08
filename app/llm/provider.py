@@ -4,6 +4,11 @@ import logging
 from typing import Protocol
 
 from app.config import get_settings
+from app.observability.metrics import (
+    LLM_FALLBACK,
+    record_llm_tokens,
+    time_llm_call,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -22,9 +27,14 @@ class LLMProvider(Protocol):
 
 class DummyLLM:
     def complete(self, prompt: str, *, system: str | None = None, max_tokens: int = 512) -> str:
-        return "[dummy] " + prompt.strip()[:200]
+        with time_llm_call("complete", "dummy"):
+            return "[dummy] " + prompt.strip()[:200]
 
     def classify(self, prompt: str, labels: list[str], *, system: str | None = None) -> str:
+        with time_llm_call("classify", "dummy"):
+            return self._classify(prompt, labels)
+
+    def _classify(self, prompt: str, labels: list[str]) -> str:
         low = prompt.lower()
         for label in labels:
             if label.replace("_", " ") in low or label in low:
@@ -48,21 +58,26 @@ class OllamaLLM:
         self._client = ollama.Client(host=s.ollama_base_url)
         self._model = s.llm_model
 
-    def complete(self, prompt: str, *, system: str | None = None, max_tokens: int = 512) -> str:
-        resp = self._client.generate(
-            model=self._model,
-            prompt=prompt,
-            system=system or "",
-            options={"num_predict": max_tokens, "temperature": 0.1},
-        )
+    def _generate(self, prompt: str, system: str | None, max_tokens: int, op: str) -> str:
+        with time_llm_call(op, "ollama"):
+            resp = self._client.generate(
+                model=self._model,
+                prompt=prompt,
+                system=system or "",
+                options={"num_predict": max_tokens, "temperature": 0.1},
+            )
+        record_llm_tokens(resp.get("prompt_eval_count"), resp.get("eval_count"))
         return resp["response"].strip()
+
+    def complete(self, prompt: str, *, system: str | None = None, max_tokens: int = 512) -> str:
+        return self._generate(prompt, system, max_tokens, "complete")
 
     def classify(self, prompt: str, labels: list[str], *, system: str | None = None) -> str:
         instruction = (
             f"{prompt}\n\nAnswer with exactly one of these labels and nothing else: "
             f"{', '.join(labels)}."
         )
-        raw = self.complete(instruction, system=system, max_tokens=8).lower()
+        raw = self._generate(instruction, system, 8, "classify").lower()
         for label in labels:
             if label in raw:
                 return label
@@ -94,5 +109,6 @@ def get_llm() -> LLMProvider:
         return DummyLLM()
     if s.llm_fallback_dummy and not _ollama_model_reachable(s.ollama_base_url, s.llm_model):
         _log.warning("Falling back to the dummy LLM (set LLM_FALLBACK_DUMMY=false to fail hard)")
+        LLM_FALLBACK.inc()
         return DummyLLM()
     return OllamaLLM()

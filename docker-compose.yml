@@ -115,6 +115,12 @@ services:
     depends_on:
       - langfuse-db
 
+  pushgateway:
+    image: prom/pushgateway:v1.9.0
+    profiles: ["observability"]
+    ports:
+      - "9091:9091"
+
   prometheus:
     image: prom/prometheus:v2.54.1
     profiles: ["observability"]
@@ -122,6 +128,8 @@ services:
       - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     ports:
       - "9090:9090"
+    depends_on:
+      - pushgateway
 
   grafana:
     image: grafana/grafana:11.2.0

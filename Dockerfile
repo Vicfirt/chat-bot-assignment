@@ -9,8 +9,11 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Bake the embedding model into the image so retrieval needs no runtime download.
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('BAAI/bge-small-en-v1.5')"
+# Bake the embedding + reranker models into the image so retrieval needs no
+# runtime download.
+RUN python -c "from sentence_transformers import SentenceTransformer, CrossEncoder; \
+SentenceTransformer('BAAI/bge-small-en-v1.5'); \
+CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')"
 
 # After the bake: never touch huggingface.co at runtime, load straight from cache.
 ENV HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1

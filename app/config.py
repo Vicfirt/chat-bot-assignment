@@ -24,6 +24,18 @@ class Settings(BaseSettings):
     context_token_budget: int = 2000
     max_retries: int = 1
 
+    # --- retrieval (all tunable) ---
+    retrieval_mode: str = "hybrid"            # "hybrid" | "dense" | "bm25"
+    dense_top_k: int = 20                     # candidates from the vector store
+    bm25_top_k: int = 20                      # candidates from the keyword index
+    rrf_k: int = 60                           # reciprocal-rank-fusion constant
+    rerank_enabled: bool = True
+    rerank_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    rerank_top_n: int = 20                    # candidates fed to the cross-encoder
+    filter_tax_year: bool = True             # restrict dense search to settings.tax_year
+    boost_tables_for_amount_queries: bool = True
+    grade_min_score: float = 0.0             # drop candidates below this final score
+
     # --- ingestion / chunking (all tunable) ---
     pdf_extractor: str = "pdfplumber"          # "pdfplumber" (layout+tables) or "pypdf"
     chunk_target_tokens: int = 450             # embedder tokens; bge-small caps at 512

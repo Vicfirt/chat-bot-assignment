@@ -39,7 +39,9 @@ def _build_prompt(state: dict) -> str:
         lines.append("\nReference excerpts:\n" + state["rag_context"])
     if _calc_ok(state):
         lines.append(
-            "\nComputed figures (authoritative, use these exact numbers):\n"
+            "\nComputed figures (already stated to the user in a preceding line — do "
+            "NOT repeat the dollar totals or rates; only explain, in one short "
+            "paragraph, how the result follows from the brackets and deduction):\n"
             + json.dumps(state["calc_result"], indent=2)
         )
     return "\n".join(lines)

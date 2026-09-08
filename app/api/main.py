@@ -36,6 +36,7 @@ class ChatResponse(BaseModel):
     steps: list[dict]
     timings: dict
     low_confidence: bool
+    guardrail: dict = Field(default_factory=dict)
 
 
 @app.get("/health")
@@ -71,6 +72,7 @@ def chat(req: ChatRequest) -> ChatResponse:
         timings={"total_ms": total_ms,
                  "per_node_ms": {s["node"]: s["duration_ms"] for s in steps}},
         low_confidence=bool(state.get("validation", {}).get("low_confidence", False)),
+        guardrail=state.get("guardrail", {}),
     )
 
 

@@ -21,6 +21,8 @@ def validate(state: dict) -> dict:
         if str(int(tt)) not in answer.replace(",", "") and f"{tt:,.0f}" not in answer:
             reasons.append("calc total not reflected in answer")
 
+    reasons.extend(state.get("guardrail", {}).get("violations", []))
+
     ok = not reasons
     retry_count = state.get("retry_count", 0)
     max_retries = get_settings().max_retries

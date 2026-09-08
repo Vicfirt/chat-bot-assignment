@@ -3,6 +3,7 @@ from __future__ import annotations
 from langgraph.graph import END, StateGraph
 
 from app.graph.nodes.calculate import calculate
+from app.graph.nodes.guardrails import guardrails
 from app.graph.nodes.plan import plan
 from app.graph.nodes.retrieve import retrieve
 from app.graph.nodes.synthesize import synthesize
@@ -20,6 +21,7 @@ def build_graph():
     g.add_node("retrieve", retrieve)
     g.add_node("calculate", calculate)
     g.add_node("synthesize", synthesize)
+    g.add_node("guardrails", guardrails)
     g.add_node("validate", validate)
 
     g.set_entry_point("triage")
@@ -35,7 +37,8 @@ def build_graph():
     })
     g.add_edge("retrieve", "calculate")
     g.add_edge("calculate", "synthesize")
-    g.add_edge("synthesize", "validate")
+    g.add_edge("synthesize", "guardrails")
+    g.add_edge("guardrails", "validate")
     g.add_conditional_edges("validate", route_after_validate,
                             {"retry": "retrieve", "end": END})
     return g.compile()

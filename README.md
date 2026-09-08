@@ -28,19 +28,19 @@ embedded Chroma) -> **Ollama** (local LLM; `LLM_MODE=dummy` bypasses it).
 ### Main graph (6 nodes)
 
 ```
-                           /--rag_only------------> retrieve --------------\
-triage --route_after_triage ---rag_plus_calc--> plan --> retrieve --> calculate --> synthesize --> validate --(retry->retrieve | end)
-                           \--needs_calc-------> plan --> calculate ------/                              ^
-                           \--out_of_scope--------------------------------------------> synthesize ------/
+                           /--rag_only------------> retrieve ----------\
+triage --route_after_triage ---rag_plus_calc--> plan --> retrieve --> calculate --> synthesize --> guardrails --> validate --(retry->retrieve | end)
+                           \--needs_calc-------> plan --> calculate --/                                          ^
+                           \--out_of_scope-------------------------------------------> synthesize --------------/
 ```
 
 - `rag_only` skips `plan`; `needs_calc` skips `retrieve`; `rag_plus_calc` runs
   both. `calculate` is a no-op passthrough on routes that don't need it.
-- `synthesize -> validate` is unconditional; `validate` either ends or sends one
-  retry back to `retrieve`.
+- `synthesize -> guardrails -> validate` is unconditional; `validate` either ends
+  or sends one retry back to `retrieve`.
 
 Compiled node set (verified): `triage, plan, retrieve, calculate, synthesize,
-validate` (plus `__start__` / `__end__`).
+guardrails, validate` (plus `__start__` / `__end__`).
 
 - **triage** — LLM classifies the question into `rag_only` / `needs_calc` /
   `rag_plus_calc` / `out_of_scope` (autonomous routing).
@@ -52,9 +52,17 @@ validate` (plus `__start__` / `__end__`).
 - **calculate** — deterministic `estimate_tax(...)`. Tool #2 (non-retrieval);
   a no-op passthrough on the `rag_only` / `out_of_scope` routes.
 - **synthesize** — LLM composes a cited answer from context and/or calc result.
-- **validate** — checks citations and numeric consistency; on failure it sends
-  exactly one retry back to `retrieve` (re-running retrieval -> calculate ->
-  synthesize), then ends regardless of the second result.
+- **guardrails** — deterministic, no model call: redacts SSNs, and flags
+  citations to pages that were never retrieved and dollar amounts that trace to
+  neither the calculator nor the retrieved context.
+- **validate** — checks citations, numeric consistency, and the guardrail
+  findings; on failure it sends exactly one retry back to `retrieve`
+  (re-running retrieval -> calculate -> synthesize -> guardrails), then ends
+  regardless of the second result.
+
+Out of scope for this prototype (production would add them, likely as a
+dedicated pre/post model): input moderation, prompt-injection / jailbreak
+screening, an LLM-judge faithfulness check, rate limiting, and an abuse policy.
 
 ### RAG subgraph (separate compiled graph, `app/rag/subgraph.py`)
 

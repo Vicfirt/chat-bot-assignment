@@ -21,6 +21,7 @@ class AgentState(TypedDict, total=False):
     calc_result: dict | None
     draft_answer: str
     final_answer: str
+    guardrail: dict
     validation: dict
     retry_count: int
     steps: Annotated[list[dict], _append]

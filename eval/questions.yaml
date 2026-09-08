@@ -1,14 +1,14 @@
 - id: q01
   question: "What is the standard deduction for a single filer in 2025?"
   route_expected: rag_only
-  reference_answer: "The 2025 standard deduction for single filers is $15,000."
+  reference_answer: "The 2025 standard deduction for single filers is $15,750."
   expected_sources: [{pub: "Pub. 501", section: "Standard Deduction"}]
   expected_number: null
   tolerance: null
 - id: q02
   question: "What is the standard deduction for married filing jointly in 2025?"
   route_expected: rag_only
-  reference_answer: "For 2025, married filing jointly standard deduction is $30,000."
+  reference_answer: "For 2025, married filing jointly standard deduction is $31,500."
   expected_sources: [{pub: "Pub. 501", section: "Standard Deduction"}]
   expected_number: null
   tolerance: null
@@ -50,23 +50,23 @@
 - id: q08
   question: "How much federal income tax do I owe on $85,000 of wages, filing single, 0 dependents, 2025?"
   route_expected: rag_plus_calc
-  reference_answer: "Taxable income $70,000; federal income tax about $10,314."
+  reference_answer: "Taxable income $69,250; federal income tax about $10,149."
   expected_sources: [{pub: "Pub. 501", section: "Standard Deduction"}]
-  expected_number: 10314
+  expected_number: 10149
   tolerance: 25
 - id: q09
   question: "Estimate my 2025 federal tax: married filing jointly, $150,000 income, 2 dependents."
   route_expected: rag_plus_calc
-  reference_answer: "Taxable income $120,000; tax about $16,228."
+  reference_answer: "Taxable income $118,500; tax about $15,898."
   expected_sources: [{pub: "Pub. 501", section: "Standard Deduction"}]
-  expected_number: 16228
+  expected_number: 15898
   tolerance: 60
 - id: q10
   question: "How much federal tax do I owe on $60,000 income, single, no dependents, 2025?"
   route_expected: needs_calc
-  reference_answer: "About $5,162."
+  reference_answer: "About $5,072."
   expected_sources: []
-  expected_number: 5162
+  expected_number: 5072
   tolerance: 25
 - id: q11
   question: "What is my effective federal tax rate on $200,000, single, 2025?"

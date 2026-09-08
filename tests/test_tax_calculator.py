@@ -16,11 +16,11 @@ def test_single_85k_2024():
 
 def test_single_85k_2025():
     r = estimate_tax(filing_status="single", gross_income=85_000, tax_year=2025)
-    assert r["standard_deduction"] == 15_000
-    assert r["taxable_income"] == 70_000
+    assert r["standard_deduction"] == 15_750
+    assert r["taxable_income"] == 69_250
     # 2025 single: 10% to 11,925; 12% to 48,475; 22% above.
-    # 1192.5 + 4386 + (70000-48475)*0.22 = 1192.5 + 4386 + 4735.5 = 10314
-    assert r["total_tax"] == pytest.approx(10_314, abs=1.0)
+    # 1192.5 + 4386 + (69250-48475)*0.22 = 1192.5 + 4386 + 4570.5 = 10149
+    assert r["total_tax"] == pytest.approx(10_149, abs=1.0)
     assert r["marginal_rate"] == pytest.approx(0.22)
 
 

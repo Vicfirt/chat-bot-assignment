@@ -1,7 +1,9 @@
 """Deterministic U.S. federal individual income tax estimator.
 
-Constants: IRS Rev. Proc. 2023-34 (tax year 2024) and Rev. Proc. 2024-40
-(tax year 2025). This tool performs no retrieval.
+Constants: IRS Rev. Proc. 2023-34 (tax year 2024). Tax year 2025 bracket
+thresholds are from Rev. Proc. 2024-40; the 2025 standard deduction reflects
+the increase enacted by the One Big Beautiful Bill Act (P.L. 119-21) and shown
+in the 2025 edition of IRS Pub. 17. This tool performs no retrieval.
 """
 from __future__ import annotations
 
@@ -15,10 +17,10 @@ STANDARD_DEDUCTION = {
         "head_of_household": 21_900,
     },
     2025: {
-        "single": 15_000,
-        "married_joint": 30_000,
-        "married_separate": 15_000,
-        "head_of_household": 22_500,
+        "single": 15_750,
+        "married_joint": 31_500,
+        "married_separate": 15_750,
+        "head_of_household": 23_625,
     },
 }
 

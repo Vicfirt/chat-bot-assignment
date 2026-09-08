@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     tax_year: int = 2025
     search_k: int = 5
     min_docs: int = 3
-    context_token_budget: int = 2000
+    context_token_budget: int = 900
     max_retries: int = 1
 
     # --- retrieval (all tunable) ---

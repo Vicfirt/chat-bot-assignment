@@ -10,6 +10,19 @@ def test_triage_sets_route_and_step():
     assert route_after_triage({**out}) == out["route"]
 
 
+def test_triage_forces_calc_for_dollar_amount_questions(monkeypatch):
+    from app.graph.nodes import triage as tri
+
+    class _Stub:
+        def classify(self, *a, **k):
+            return "rag_only"
+
+    monkeypatch.setattr(tri, "get_llm", lambda: _Stub())
+    out = tri.triage({"question": "How much federal tax do I owe on $85,000, single, 2025?",
+                      "chat_history": []})
+    assert out["route"] == "rag_plus_calc"
+
+
 def test_plan_extracts_tax_profile():
     out = plan({"question": "How much federal tax do I owe on $85,000, filing single, 0 dependents?",
                 "chat_history": [], "route": "rag_plus_calc"})

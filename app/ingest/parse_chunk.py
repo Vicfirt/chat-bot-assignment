@@ -243,6 +243,70 @@ def chunk_blocks(
 # --------------------------------------------------------------------------- #
 # PDF I/O
 # --------------------------------------------------------------------------- #
+# IRS publications set body text in two or three columns. pdfplumber's plain
+# extract_text() groups words into full-width lines, so a left-column line and
+# the right-column line at the same height get spliced together ("THEN file a
+# return Standard Deductiongives the rules"). We locate the column gutters
+# (vertical bands almost no word box crosses) and read each column top-to-bottom.
+_SCAN_MARGIN = 0.12         # ignore the outer 12% of width when hunting gutters
+_GUTTER_WIN_PT = 18         # a gutter must be the local straddle-minimum over +-this
+_MERGE_PT = 26             # gutters closer than this are one gutter
+_COL_MIN_SHARE = 0.08      # a column band holding fewer words than this is spurious
+
+
+def _column_gutters(words: list[dict], width: float) -> list[float]:
+    n = len(words)
+    spans = [(float(wd["x0"]), float(wd["x1"])) for wd in words]
+    xs = list(range(int(width * _SCAN_MARGIN), int(width * (1 - _SCAN_MARGIN)), 2))
+    straddle = [sum(1 for a, b in spans if a < x < b) for x in xs]
+    thresh = max(2, int(n * 0.012))
+    win = max(1, _GUTTER_WIN_PT // 2)
+
+    raw: list[float] = []
+    for i, x in enumerate(xs):
+        if straddle[i] > thresh:
+            continue
+        if straddle[i] == min(straddle[max(0, i - win):i + win + 1]):
+            raw.append(float(x))
+
+    merged: list[list[float]] = []
+    for x in raw:
+        if merged and x - merged[-1][-1] <= _MERGE_PT:
+            merged[-1].append(x)
+        else:
+            merged.append([x])
+    gutters = [sum(g) / len(g) for g in merged]
+
+    # drop a gutter that would carve off a band with too few words
+    bounds = [0.0, *gutters, width]
+    keep: list[float] = []
+    for gi, g in enumerate(gutters):
+        left_band = (bounds[gi], g)
+        right_band = (g, bounds[gi + 2])
+        lc = sum(1 for a, b in spans if left_band[0] <= (a + b) / 2 < left_band[1])
+        rc = sum(1 for a, b in spans if right_band[0] <= (a + b) / 2 < right_band[1])
+        if lc >= n * _COL_MIN_SHARE and rc >= n * _COL_MIN_SHARE:
+            keep.append(g)
+    return keep
+
+
+def _page_text_columns(page) -> str:
+    words = page.extract_words(use_text_flow=False, keep_blank_chars=False)
+    if len(words) < 60:
+        return page.extract_text() or ""
+
+    w, h = float(page.width), float(page.height)
+    gutters = _column_gutters(words, w)
+    if not gutters:
+        return page.extract_text() or ""
+
+    edges = [0.0, *gutters, w]
+    parts = []
+    for x0, x1 in zip(edges, edges[1:]):
+        parts.append(page.crop((x0, 0.0, x1, h)).extract_text() or "")
+    return "\n".join(p for p in parts if p.strip())
+
+
 def extract_pdf_pages(path: Path, extractor: str = "pdfplumber") -> list[tuple[int, str, list]]:
     if extractor == "pypdf":
         from pypdf import PdfReader
@@ -255,7 +319,7 @@ def extract_pdf_pages(path: Path, extractor: str = "pdfplumber") -> list[tuple[i
     out: list[tuple[int, str, list]] = []
     with pdfplumber.open(str(path)) as pdf:
         for i, page in enumerate(pdf.pages, start=1):
-            out.append((i, page.extract_text() or "", page.extract_tables() or []))
+            out.append((i, _page_text_columns(page), page.extract_tables() or []))
     return out
 
 

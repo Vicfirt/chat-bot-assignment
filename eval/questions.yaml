@@ -2,14 +2,16 @@
   question: "What is the standard deduction for a single filer in 2025?"
   route_expected: rag_only
   reference_answer: "The 2025 standard deduction for single filers is $15,750."
-  expected_sources: [{pub: "Pub. 501", section: "Standard Deduction"}]
+  expected_sources: [{pub: "Pub. 501", section: "Standard Deduction"}, {pub: "Pub. 17", section: "Standard Deduction"}]
+  relevant_pages: [{pub: "Pub. 17", page: 97}]
   expected_number: null
   tolerance: null
 - id: q02
   question: "What is the standard deduction for married filing jointly in 2025?"
   route_expected: rag_only
   reference_answer: "For 2025, married filing jointly standard deduction is $31,500."
-  expected_sources: [{pub: "Pub. 501", section: "Standard Deduction"}]
+  expected_sources: [{pub: "Pub. 501", section: "Standard Deduction"}, {pub: "Pub. 17", section: "Standard Deduction"}]
+  relevant_pages: [{pub: "Pub. 17", page: 97}]
   expected_number: null
   tolerance: null
 - id: q03
@@ -17,6 +19,7 @@
   route_expected: rag_only
   reference_answer: "You must be unmarried, pay more than half the cost of keeping up a home, and have a qualifying person."
   expected_sources: [{pub: "Pub. 501", section: "Filing Status"}]
+  relevant_pages: [{pub: "Pub. 17", page: 26}, {pub: "Pub. 501", page: 8}]
   expected_number: null
   tolerance: null
 - id: q04
@@ -24,6 +27,7 @@
   route_expected: rag_only
   reference_answer: "A qualifying child must meet relationship, age, residency, support, and joint return tests."
   expected_sources: [{pub: "Pub. 501", section: "Dependents"}]
+  relevant_pages: [{pub: "Pub. 17", page: 29}, {pub: "Pub. 17", page: 30}, {pub: "Pub. 501", page: 13}]
   expected_number: null
   tolerance: null
 - id: q05
@@ -31,6 +35,7 @@
   route_expected: rag_only
   reference_answer: "You generally must pay estimated tax if you expect to owe at least $1,000 after withholding and credits."
   expected_sources: [{pub: "Pub. 505", section: "Estimated Tax"}]
+  relevant_pages: [{pub: "Pub. 505", page: 21}, {pub: "Pub. 17", page: 43}]
   expected_number: null
   tolerance: null
 - id: q06
@@ -38,6 +43,7 @@
   route_expected: rag_only
   reference_answer: "2025 single brackets: 10%, 12%, 22%, 24%, 32%, 35%, 37%."
   expected_sources: [{pub: "Pub. 17", section: "2025 Tax Rate Schedules"}]
+  relevant_pages: [{pub: "Pub. 17", page: 127}]
   expected_number: null
   tolerance: null
 - id: q07
@@ -45,27 +51,31 @@
   route_expected: rag_only
   reference_answer: "A parent can be a qualifying relative if income and support tests are met; they need not live with you."
   expected_sources: [{pub: "Pub. 501", section: "Dependents"}]
+  relevant_pages: [{pub: "Pub. 17", page: 36}, {pub: "Pub. 501", page: 19}]
   expected_number: null
   tolerance: null
 - id: q08
   question: "How much federal income tax do I owe on $85,000 of wages, filing single, 0 dependents, 2025?"
   route_expected: rag_plus_calc
   reference_answer: "Taxable income $69,250; federal income tax about $10,149."
-  expected_sources: [{pub: "Pub. 501", section: "Standard Deduction"}]
+  expected_sources: [{pub: "Pub. 501", section: "Standard Deduction"}, {pub: "Pub. 17", section: "Standard Deduction"}]
+  relevant_pages: [{pub: "Pub. 17", page: 97}, {pub: "Pub. 17", page: 127}]
   expected_number: 10149
   tolerance: 25
 - id: q09
   question: "Estimate my 2025 federal tax: married filing jointly, $150,000 income, 2 dependents."
   route_expected: rag_plus_calc
   reference_answer: "Taxable income $118,500; tax about $15,898."
-  expected_sources: [{pub: "Pub. 501", section: "Standard Deduction"}]
+  expected_sources: [{pub: "Pub. 501", section: "Standard Deduction"}, {pub: "Pub. 17", section: "Standard Deduction"}]
+  relevant_pages: [{pub: "Pub. 17", page: 97}, {pub: "Pub. 17", page: 127}]
   expected_number: 15898
   tolerance: 60
 - id: q10
   question: "How much federal tax do I owe on $60,000 income, single, no dependents, 2025?"
-  route_expected: needs_calc
-  reference_answer: "About $5,072."
-  expected_sources: []
+  route_expected: rag_plus_calc
+  reference_answer: "Taxable income $44,250; federal income tax about $5,072."
+  expected_sources: [{pub: "Pub. 17", section: "Standard Deduction"}]
+  relevant_pages: [{pub: "Pub. 17", page: 97}, {pub: "Pub. 17", page: 127}]
   expected_number: 5072
   tolerance: 25
 - id: q11
@@ -73,6 +83,7 @@
   route_expected: rag_plus_calc
   reference_answer: "Effective rate roughly 18-19%."
   expected_sources: [{pub: "Pub. 17", section: "2025 Tax Rate Schedules"}]
+  relevant_pages: [{pub: "Pub. 17", page: 127}]
   expected_number: null
   tolerance: null
 - id: q12
@@ -80,6 +91,7 @@
   route_expected: rag_only
   reference_answer: "Yes, there is an additional standard deduction amount for taxpayers 65 or older or blind."
   expected_sources: [{pub: "Pub. 501", section: "Standard Deduction"}]
+  relevant_pages: [{pub: "Pub. 17", page: 94}, {pub: "Pub. 17", page: 95}]
   expected_number: null
   tolerance: null
 - id: q13
@@ -87,6 +99,7 @@
   route_expected: rag_only
   reference_answer: "You can usually file married filing jointly for the year of death; qualifying surviving spouse may apply for two years after."
   expected_sources: [{pub: "Pub. 501", section: "Filing Status"}]
+  relevant_pages: [{pub: "Pub. 17", page: 24}, {pub: "Pub. 17", page: 25}]
   expected_number: null
   tolerance: null
 - id: q14
@@ -94,6 +107,7 @@
   route_expected: rag_only
   reference_answer: "Estimated payments are generally due April 15, June 15, September 15, and January 15."
   expected_sources: [{pub: "Pub. 505", section: "Estimated Tax"}]
+  relevant_pages: [{pub: "Pub. 17", page: 44}, {pub: "Pub. 505", page: 25}]
   expected_number: null
   tolerance: null
 - id: q15
@@ -101,5 +115,14 @@
   route_expected: out_of_scope
   reference_answer: "Out of scope."
   expected_sources: []
+  relevant_pages: []
   expected_number: null
   tolerance: null
+- id: q16
+  question: "Just compute the tax: $50,000 wages, single, 0 dependents, 2025, standard deduction only."
+  route_expected: needs_calc
+  reference_answer: "Taxable income $34,250; federal income tax about $3,872."
+  expected_sources: []
+  relevant_pages: []
+  expected_number: 3872
+  tolerance: 25

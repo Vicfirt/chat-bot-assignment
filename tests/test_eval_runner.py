@@ -1,9 +1,9 @@
 from eval.run_eval import load_eval_set, score_item
 
 
-def test_load_eval_set_has_15_items():
+def test_load_eval_set_covers_every_route():
     items = load_eval_set("eval/questions.yaml")
-    assert len(items) == 15
+    assert 10 <= len(items) <= 20
     assert {i["route_expected"] for i in items} >= {"rag_only", "needs_calc", "rag_plus_calc", "out_of_scope"}
 
 

@@ -66,3 +66,20 @@ def test_synthesize_out_of_scope_is_canned():
 
     out = synthesize({"route": "out_of_scope", "question": "weather?"})
     assert "scope" in out["final_answer"].lower()
+
+
+def test_synthesize_leads_with_deterministic_figure_for_calc(monkeypatch):
+    from app.graph.nodes import synthesize as syn
+
+    class _Stub:
+        def complete(self, *a, **k):
+            return "the model said four thousand dollars"
+
+    monkeypatch.setattr(syn, "get_llm", lambda: _Stub())
+    calc = {"tax_year": 2025, "filing_status": "single", "gross_income": 60000.0,
+            "standard_deduction": 15750, "taxable_income": 44250.0,
+            "total_tax": 5071.5, "marginal_rate": 0.12, "effective_rate": 0.0845}
+    out = syn.synthesize({"route": "rag_plus_calc", "question": "tax on $60k?",
+                          "rag_context": "", "calc_result": calc})
+    assert "$5,071.50" in out["final_answer"]
+    assert out["final_answer"].startswith("Estimated 2025 federal income tax")

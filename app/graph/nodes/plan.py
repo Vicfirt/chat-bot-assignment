@@ -12,18 +12,37 @@ _STATUS_PATTERNS = [
     ("head_of_household", r"head of household"),
     ("single", r"\bsingle\b"),
 ]
-_MONEY = re.compile(r"\$?\s*(\d[\d,]*)(?:\.\d+)?\s*(k)?", re.I)
+# Income amounts, most reliable first: "$85,000" / "85,000" / "$85k" / "85k".
+# A bare integer is a last resort and years are excluded so "my 2025 tax" and
+# "2 dependents" are never read as income.
+_MONEY_STRONG = re.compile(r"\$\s*(\d[\d,]*)(?:\.\d+)?\s*(k)?|\b(\d{1,3}(?:,\d{3})+)\b|\b(\d+)\s*k\b", re.I)
+_MONEY_BARE = re.compile(r"\b(\d{4,})\b")
 _DEP = re.compile(r"(\d+)\s+dependent", re.I)
 _YEAR = re.compile(r"\b(20\d{2})\b")
+
+
+def _extract_income(text: str) -> float:
+    for m in _MONEY_STRONG.finditer(text):
+        digits, k1, grouped, k2 = m.groups()
+        if grouped:
+            return float(grouped.replace(",", ""))
+        if k2:
+            return float(k2) * 1000
+        if digits:
+            return float(digits.replace(",", "")) * (1000 if k1 else 1)
+    best = 0.0
+    for m in _MONEY_BARE.finditer(text):
+        val = float(m.group(1))
+        if 2000 <= val <= 2100:      # a year, not an amount
+            continue
+        best = max(best, val)
+    return best
 
 
 def _extract_profile(text: str) -> dict:
     low = text.lower()
     status = next((s for s, pat in _STATUS_PATTERNS if re.search(pat, low)), "single")
-    m = _MONEY.search(text)
-    income = 0.0
-    if m:
-        income = float(m.group(1).replace(",", "")) * (1000 if m.group(2) else 1)
+    income = _extract_income(text)
     dep = int(_DEP.search(text).group(1)) if _DEP.search(text) else 0
     ym = _YEAR.search(text)
     year = int(ym.group(1)) if ym else get_settings().tax_year

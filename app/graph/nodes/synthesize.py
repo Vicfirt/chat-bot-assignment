@@ -18,11 +18,26 @@ _SYS = (
 )
 
 
+def _calc_ok(state: dict) -> dict | None:
+    r = state.get("calc_result")
+    return r if r and "error" not in r else None
+
+
+def _figure_line(r: dict) -> str:
+    return (
+        f"Estimated {r['tax_year']} federal income tax: "
+        f"${r['total_tax']:,.2f} on taxable income ${r['taxable_income']:,.2f} "
+        f"({r['filing_status'].replace('_', ' ')}, standard deduction "
+        f"${r['standard_deduction']:,.0f}). Marginal rate "
+        f"{r['marginal_rate'] * 100:.0f}%, effective rate {r['effective_rate'] * 100:.1f}%."
+    )
+
+
 def _build_prompt(state: dict) -> str:
     lines = [f"Question: {state['question']}"]
     if state.get("rag_context"):
         lines.append("\nReference excerpts:\n" + state["rag_context"])
-    if state.get("calc_result") and "error" not in state["calc_result"]:
+    if _calc_ok(state):
         lines.append(
             "\nComputed figures (authoritative, use these exact numbers):\n"
             + json.dumps(state["calc_result"], indent=2)
@@ -36,7 +51,12 @@ def synthesize(state: dict) -> dict:
         return {"draft_answer": _OOS, "final_answer": _OOS,
                 **record_step("synthesize", start, "out_of_scope canned")}
 
-    answer = get_llm().complete(_build_prompt(state), system=_SYS, max_tokens=400).strip()
+    body = get_llm().complete(_build_prompt(state), system=_SYS, max_tokens=400).strip()
+    # For calculation answers the exact dollar figure comes from the deterministic
+    # tool, not the model — small models mis-transcribe it. Lead with the tool's
+    # own line and let the model's prose follow as explanation.
+    calc = _calc_ok(state)
+    answer = f"{_figure_line(calc)}\n\n{body}" if calc else body
     answer += _DISCLAIMER
     return {"draft_answer": answer, "final_answer": answer,
             **record_step("synthesize", start, f"{len(answer)} chars")}

@@ -33,6 +33,17 @@ def test_plan_extracts_tax_profile():
     assert len(out["subtasks"]) >= 2
 
 
+def test_plan_income_ignores_year_and_dependent_count():
+    out = plan({"question": "Estimate my 2025 federal tax: married filing jointly, "
+                            "$150,000 income, 2 dependents.",
+                "chat_history": [], "route": "rag_plus_calc"})
+    tp = out["tax_profile"]
+    assert tp["gross_income"] == 150000
+    assert tp["tax_year"] == 2025
+    assert tp["filing_status"] == "married_joint"
+    assert tp["dependents"] == 2
+
+
 def test_plan_noop_for_rag_only():
     out = plan({"question": "who can claim head of household?", "chat_history": [],
                 "route": "rag_only"})

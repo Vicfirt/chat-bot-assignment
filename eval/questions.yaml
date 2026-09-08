@@ -1,14 +1,14 @@
 - id: q01
-  question: "What is the standard deduction for a single filer in 2024?"
+  question: "What is the standard deduction for a single filer in 2025?"
   route_expected: rag_only
-  reference_answer: "The 2024 standard deduction for single filers is $14,600."
+  reference_answer: "The 2025 standard deduction for single filers is $15,000."
   expected_sources: [{pub: "Pub. 501", section: "Standard Deduction"}]
   expected_number: null
   tolerance: null
 - id: q02
-  question: "What is the standard deduction for married filing jointly in 2024?"
+  question: "What is the standard deduction for married filing jointly in 2025?"
   route_expected: rag_only
-  reference_answer: "For 2024, married filing jointly standard deduction is $29,200."
+  reference_answer: "For 2025, married filing jointly standard deduction is $30,000."
   expected_sources: [{pub: "Pub. 501", section: "Standard Deduction"}]
   expected_number: null
   tolerance: null
@@ -34,10 +34,10 @@
   expected_number: null
   tolerance: null
 - id: q06
-  question: "What are the federal income tax brackets for a single filer in 2024?"
+  question: "What are the federal income tax brackets for a single filer in 2025?"
   route_expected: rag_only
-  reference_answer: "2024 single brackets: 10%, 12%, 22%, 24%, 32%, 35%, 37%."
-  expected_sources: [{pub: "Pub. 17", section: "2024 Tax Rate Schedules"}]
+  reference_answer: "2025 single brackets: 10%, 12%, 22%, 24%, 32%, 35%, 37%."
+  expected_sources: [{pub: "Pub. 17", section: "2025 Tax Rate Schedules"}]
   expected_number: null
   tolerance: null
 - id: q07
@@ -48,31 +48,31 @@
   expected_number: null
   tolerance: null
 - id: q08
-  question: "How much federal income tax do I owe on $85,000 of wages, filing single, 0 dependents, 2024?"
+  question: "How much federal income tax do I owe on $85,000 of wages, filing single, 0 dependents, 2025?"
   route_expected: rag_plus_calc
-  reference_answer: "Taxable income $70,400; federal income tax about $10,541."
+  reference_answer: "Taxable income $70,000; federal income tax about $10,314."
   expected_sources: [{pub: "Pub. 501", section: "Standard Deduction"}]
-  expected_number: 10541
+  expected_number: 10314
   tolerance: 25
 - id: q09
-  question: "Estimate my 2024 federal tax: married filing jointly, $150,000 income, 2 dependents."
+  question: "Estimate my 2025 federal tax: married filing jointly, $150,000 income, 2 dependents."
   route_expected: rag_plus_calc
-  reference_answer: "Taxable income $120,800; tax about $17,168."
+  reference_answer: "Taxable income $120,000; tax about $16,228."
   expected_sources: [{pub: "Pub. 501", section: "Standard Deduction"}]
-  expected_number: 17168
+  expected_number: 16228
   tolerance: 60
 - id: q10
-  question: "I already know my taxable income is $50,000, single. What is my 2024 federal tax?"
+  question: "How much federal tax do I owe on $60,000 income, single, no dependents, 2025?"
   route_expected: needs_calc
-  reference_answer: "About $6,053."
+  reference_answer: "About $5,162."
   expected_sources: []
-  expected_number: 6053
-  tolerance: 1500
+  expected_number: 5162
+  tolerance: 25
 - id: q11
-  question: "What is my effective federal tax rate on $200,000, single, 2024?"
+  question: "What is my effective federal tax rate on $200,000, single, 2025?"
   route_expected: rag_plus_calc
-  reference_answer: "Effective rate roughly 19-20%."
-  expected_sources: [{pub: "Pub. 17", section: "2024 Tax Rate Schedules"}]
+  reference_answer: "Effective rate roughly 18-19%."
+  expected_sources: [{pub: "Pub. 17", section: "2025 Tax Rate Schedules"}]
   expected_number: null
   tolerance: null
 - id: q12

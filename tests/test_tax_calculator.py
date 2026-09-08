@@ -14,17 +14,32 @@ def test_single_85k_2024():
     assert 0 < r["effective_rate"] < 0.22
 
 
+def test_single_85k_2025():
+    r = estimate_tax(filing_status="single", gross_income=85_000, tax_year=2025)
+    assert r["standard_deduction"] == 15_000
+    assert r["taxable_income"] == 70_000
+    # 2025 single: 10% to 11,925; 12% to 48,475; 22% above.
+    # 1192.5 + 4386 + (70000-48475)*0.22 = 1192.5 + 4386 + 4735.5 = 10314
+    assert r["total_tax"] == pytest.approx(10_314, abs=1.0)
+    assert r["marginal_rate"] == pytest.approx(0.22)
+
+
+def test_2025_is_the_default_year():
+    assert estimate_tax(filing_status="single", gross_income=85_000)["tax_year"] == 2025
+
+
 def test_income_below_standard_deduction_is_zero_tax():
-    r = estimate_tax(filing_status="single", gross_income=10_000, tax_year=2024)
+    r = estimate_tax(filing_status="single", gross_income=10_000, tax_year=2025)
     assert r["taxable_income"] == 0
     assert r["total_tax"] == 0
     assert r["effective_rate"] == 0
 
 
 def test_all_filing_statuses_supported():
-    for fs in FILING_STATUSES:
-        r = estimate_tax(filing_status=fs, gross_income=120_000, tax_year=2024)
-        assert r["total_tax"] > 0
+    for year in (2024, 2025):
+        for fs in FILING_STATUSES:
+            r = estimate_tax(filing_status=fs, gross_income=120_000, tax_year=year)
+            assert r["total_tax"] > 0
 
 
 def test_unknown_status_raises():

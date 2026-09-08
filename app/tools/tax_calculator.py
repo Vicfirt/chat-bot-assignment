@@ -1,7 +1,7 @@
 """Deterministic U.S. federal individual income tax estimator.
 
-Constants below are transcribed from IRS Rev. Proc. 2023-34 (tax year 2024),
-Pub. 17, and Pub. 501. This tool performs no retrieval.
+Constants: IRS Rev. Proc. 2023-34 (tax year 2024) and Rev. Proc. 2024-40
+(tax year 2025). This tool performs no retrieval.
 """
 from __future__ import annotations
 
@@ -13,10 +13,16 @@ STANDARD_DEDUCTION = {
         "married_joint": 29_200,
         "married_separate": 14_600,
         "head_of_household": 21_900,
-    }
+    },
+    2025: {
+        "single": 15_000,
+        "married_joint": 30_000,
+        "married_separate": 15_000,
+        "head_of_household": 22_500,
+    },
 }
 
-# Each list: (lower_bound_of_bracket, marginal_rate), ascending. Tax year 2024.
+# Each list: (lower_bound_of_bracket, marginal_rate), ascending.
 BRACKETS = {
     2024: {
         "single": [
@@ -35,7 +41,25 @@ BRACKETS = {
             (0, 0.10), (16_550, 0.12), (63_100, 0.22), (100_500, 0.24),
             (191_950, 0.32), (243_700, 0.35), (609_350, 0.37),
         ],
-    }
+    },
+    2025: {
+        "single": [
+            (0, 0.10), (11_925, 0.12), (48_475, 0.22), (103_350, 0.24),
+            (197_300, 0.32), (250_525, 0.35), (626_350, 0.37),
+        ],
+        "married_joint": [
+            (0, 0.10), (23_850, 0.12), (96_950, 0.22), (206_700, 0.24),
+            (394_600, 0.32), (501_050, 0.35), (751_600, 0.37),
+        ],
+        "married_separate": [
+            (0, 0.10), (11_925, 0.12), (48_475, 0.22), (103_350, 0.24),
+            (197_300, 0.32), (250_525, 0.35), (375_800, 0.37),
+        ],
+        "head_of_household": [
+            (0, 0.10), (17_000, 0.12), (64_850, 0.22), (103_350, 0.24),
+            (197_300, 0.32), (250_500, 0.35), (626_350, 0.37),
+        ],
+    },
 }
 
 
@@ -43,7 +67,7 @@ def estimate_tax(
     *,
     filing_status: str,
     gross_income: float,
-    tax_year: int = 2024,
+    tax_year: int = 2025,
     dependents: int = 0,
 ) -> dict:
     if filing_status not in FILING_STATUSES:

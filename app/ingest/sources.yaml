@@ -1,4 +1,4 @@
-# IRS publications, tax year 2024. Public domain.
+# IRS publications, tax year 2025 (current "latest" editions at irs.gov). Public domain.
 # NOTE: fill sha256 after first download with:  shasum -a 256 <file>
 - name: pub17
   pub: "Pub. 17"

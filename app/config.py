@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     chroma_collection: str = "irs_pubs"
     raw_pdf_dir: str = "data/raw_pdfs"
 
-    tax_year: int = 2024
+    tax_year: int = 2025
     search_k: int = 5
     min_docs: int = 3
     context_token_budget: int = 2000

@@ -15,20 +15,20 @@ def seeded(tmp_path):
          "text": "[Table - Standard Deduction (Pub. 501 p.29)]\nSingle | $14,600\n"
                  "Married filing jointly | $29,200\nHead of household | $21,900",
          "pub": "Pub. 501", "section": "Standard Deduction", "page": 29,
-         "source_url": "u", "tax_year": 2024},
+         "source_url": "u", "tax_year": 2025},
         {"chunk_id": "sd-prose", "block_type": "prose",
          "text": "The standard deduction reduces the income you are taxed on. Most filers "
                  "take it instead of itemizing.",
          "pub": "Pub. 501", "section": "Standard Deduction", "page": 22,
-         "source_url": "u", "tax_year": 2024},
+         "source_url": "u", "tax_year": 2025},
         {"chunk_id": "est-prose", "block_type": "prose",
          "text": "You may owe estimated tax if you have income not subject to withholding.",
          "pub": "Pub. 505", "section": "Estimated Tax", "page": 5,
-         "source_url": "u", "tax_year": 2024},
+         "source_url": "u", "tax_year": 2025},
         {"chunk_id": "old-tab", "block_type": "table",
          "text": "[Table - Standard Deduction (Pub. 501 p.29)]\nSingle | $13,850",
          "pub": "Pub. 501", "section": "Standard Deduction", "page": 29,
-         "source_url": "u", "tax_year": 2023},
+         "source_url": "u", "tax_year": 2024},
     ])
     return HybridRetriever(dense=r)
 
@@ -58,7 +58,7 @@ def test_tax_year_filter_excludes_other_years(seeded, monkeypatch):
     hits = seeded.search("standard deduction amount for single filers", k=10)
     get_settings.cache_clear()
     assert hits
-    assert all(h.tax_year == 2024 for h in hits)
+    assert all(h.tax_year == 2025 for h in hits)
     assert "old-tab" not in {h.chunk_id for h in hits}
 
 

@@ -10,7 +10,8 @@ from app.llm.provider import get_llm
 _MONEY = re.compile(r"\$\s?\d[\d,]*|\b\d{1,3}(,\d{3})+\b|\b\d+k\b", re.I)
 _CALC_HINT = re.compile(
     r"\b(how much|owe|estimat\w*|calculat\w*|effective|marginal|"
-    r"tax (on|rate|bill|liability)|do i pay|what.s my tax)\b",
+    r"tax (on|rate|bill|liability)|do i pay|what.s my tax|"
+    r"my (federal |state |income |total )*tax(es)?)\b",
     re.I,
 )
 # Any hint that the question is actually about U.S. federal individual income

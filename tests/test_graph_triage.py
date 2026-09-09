@@ -23,6 +23,21 @@ def test_triage_forces_calc_for_dollar_amount_questions(monkeypatch):
     assert out["route"] == "rag_plus_calc"
 
 
+def test_triage_forces_calc_for_plain_what_is_my_tax_phrasing(monkeypatch):
+    from app.graph.nodes import triage as tri
+
+    class _Stub:
+        def classify(self, *a, **k):
+            return "rag_only"
+
+    monkeypatch.setattr(tri, "get_llm", lambda: _Stub())
+    out = tri.triage(
+        {"question": "I am single with no dependents and made $85,000 in 2025. "
+                     "What is my federal income tax?",
+         "chat_history": []})
+    assert out["route"] == "rag_plus_calc"
+
+
 def test_triage_forces_out_of_scope_when_no_tax_vocabulary(monkeypatch):
     from app.graph.nodes import triage as tri
 

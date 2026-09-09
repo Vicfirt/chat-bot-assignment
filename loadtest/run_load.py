@@ -93,6 +93,8 @@ def write_report(result: dict, out_md: str = "docs/loadtest-results.md",
     mode = result.get("mode", "?")
     model = result.get("model", "the local model")
     retr_ms = per_node.get("retrieve", 0.0)
+    classify_share = round(
+        100 * (retr_ms + per_node.get("triage", 0)) / max(1, sum(per_node.values())))
     lines = [
         "# Load Test Results", "",
         f"- `LLM_MODE={mode}`"
@@ -132,8 +134,8 @@ def write_report(result: dict, out_md: str = "docs/loadtest-results.md",
         "`/chat/stream` SSE plumbing already carries step events; extending it to "
         "model tokens would drop time-to-first-token to ~1-2 s. Not done.",
         "2. **Make `triage` and `expand_query` rules/embeddings-only.** They are "
-        f"two more LLM round-trips ({100 * (retr_ms + per_node.get('triage', 0)) / max(1, sum(per_node.values())):.0f}% "
-        "of this run). The deterministic guard in `triage` already overrides the "
+        f"two more LLM round-trips ({classify_share}% of this run). "
+        "The deterministic guard in `triage` already overrides the "
         "model for the common cases, and `expand_query`'s rewrite buys little over "
         "the domain-hint + `tax_profile` queries. Bonus: routing becomes "
         "deterministic. This is the largest saving on a bigger model, where "

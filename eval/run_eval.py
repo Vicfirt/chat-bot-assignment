@@ -28,7 +28,8 @@ def score_item(item: dict, state: dict) -> dict:
     if item.get("expected_number") is not None:
         calc = state.get("calc_result") or {}
         tt = calc.get("tax_after_credits", calc.get("total_tax"))
-        number_ok = tt is not None and abs(tt - item["expected_number"]) <= (item.get("tolerance") or 0)
+        number_ok = (tt is not None
+                     and abs(tt - item["expected_number"]) <= (item.get("tolerance") or 0))
     answer = state.get("final_answer", "")
     kw = _keywords(item["reference_answer"])
     return {
@@ -59,11 +60,15 @@ def run_eval(path: str = "eval/questions.yaml", out: str = "docs/eval-results.md
 
     rows = [_run(item) for item in items]
 
-    agg = {"n": len(rows), "route_accuracy": _rate(rows, "route_ok"),
-           "retrieval_hit_rate": _rate(rows, "retrieval_hit"), "citation_rate": _rate(rows, "has_citation"),
-           "numeric_accuracy": _rate(rows, "number_ok"), "keyword_hit_rate": _rate(rows, "keyword_hit")}
+    agg = {"n": len(rows),
+           "route_accuracy": _rate(rows, "route_ok"),
+           "retrieval_hit_rate": _rate(rows, "retrieval_hit"),
+           "citation_rate": _rate(rows, "has_citation"),
+           "numeric_accuracy": _rate(rows, "number_ok"),
+           "keyword_hit_rate": _rate(rows, "keyword_hit")}
 
-    retr = evaluate_retrieval(items, k=get_settings().search_k) if retrieval else {"rows": [], "aggregate": {}}
+    retr = (evaluate_retrieval(items, k=get_settings().search_k)
+            if retrieval else {"rows": [], "aggregate": {}})
 
     lines = ["# Functional Evaluation Results", "", f"Items: {agg['n']}", "",
              "| id | route_ok | retrieval_hit | has_citation | number_ok | keyword_hit |",
@@ -82,10 +87,10 @@ def run_eval(path: str = "eval/questions.yaml", out: str = "docs/eval-results.md
         def _f(v: float | None) -> str:
             return "-" if v is None else f"{v:.3f}"
 
+        _cols = ("precision_at_k", "recall_at_k", "mrr", "context_precision",
+                 "rr_fused", "rr_reranked")
         for r in retr["rows"]:
-            lines.append(
-                f"| {r['id']} | {_f(r['precision_at_k'])} | {_f(r['recall_at_k'])} | {_f(r['mrr'])} | "
-                f"{_f(r['context_precision'])} | {_f(r['rr_fused'])} | {_f(r['rr_reranked'])} |")
+            lines.append("| " + " | ".join([r["id"], *(_f(r[c]) for c in _cols)]) + " |")
         lines += ["", "### Aggregate", ""] + [f"- **{k}**: {v}" for k, v in ra.items()]
 
     Path(out).parent.mkdir(parents=True, exist_ok=True)

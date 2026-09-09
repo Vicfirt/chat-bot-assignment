@@ -10,9 +10,9 @@ drop) lives on `ChunkConfig`, populated from `app.config.Settings`.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 _HYPHEN_BREAK = re.compile(r"(\w)-\n(\w)")
 _BARE_PAGENUM = re.compile(r"^\s*\d{1,4}\s*$")
@@ -58,7 +58,7 @@ class ChunkConfig:
     numeric_density: float = 0.28
 
     @classmethod
-    def from_settings(cls, s) -> "ChunkConfig":
+    def from_settings(cls, s) -> ChunkConfig:
         return cls(
             pdf_extractor=s.pdf_extractor,
             target_tokens=s.chunk_target_tokens,
@@ -155,7 +155,8 @@ def serialize_table(rows: list[list[str | None]], *, section: str, pub: str, pag
 # --------------------------------------------------------------------------- #
 # segmentation + windowing
 # --------------------------------------------------------------------------- #
-def segment_text(lines: list[str], *, page: int, default_section: str, cfg: ChunkConfig) -> list[Block]:
+def segment_text(lines: list[str], *, page: int, default_section: str,
+                 cfg: ChunkConfig) -> list[Block]:
     blocks: list[Block] = []
     section = default_section
     buf: list[str] = []
@@ -339,5 +340,6 @@ def parse_pdf(path: Path, meta: dict, cfg: ChunkConfig | None = None) -> list[Bl
             for t in tables:
                 s = serialize_table(t, section=default_section, pub=meta["pub"], page=page_no)
                 if s and _words(s) >= 3:
-                    blocks.append(Block(text=s, section=default_section, page=page_no, block_type="table"))
+                    blocks.append(Block(text=s, section=default_section, page=page_no,
+                                        block_type="table"))
     return blocks

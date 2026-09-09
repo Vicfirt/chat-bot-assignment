@@ -46,7 +46,7 @@ def _norm_amount(raw: str) -> str:
     return n
 
 
-def _iter_numbers(obj) -> "list[float]":
+def _iter_numbers(obj) -> list[float]:
     if isinstance(obj, bool):
         return []
     if isinstance(obj, (int, float)):

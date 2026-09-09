@@ -48,7 +48,12 @@ def _prepare(chat_history: list[dict] | None):
     global _compiled
     if _compiled is None:
         _compiled = build_graph()
-    from app.observability.logging import configure_logging, get_request_id, new_request_id, set_request_id
+    from app.observability.logging import (
+        configure_logging,
+        get_request_id,
+        new_request_id,
+        set_request_id,
+    )
 
     configure_logging()
     if get_request_id() == "-":

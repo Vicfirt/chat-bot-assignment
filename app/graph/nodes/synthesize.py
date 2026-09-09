@@ -6,7 +6,8 @@ import time
 from app.graph.state import record_step
 from app.llm.provider import get_llm
 
-_DISCLAIMER = "\n\nThis is general information, not tax advice. Verify with the cited IRS publications."
+_DISCLAIMER = ("\n\nThis is general information, not tax advice. "
+               "Verify with the cited IRS publications.")
 _OOS = ("I can only help with U.S. federal individual income tax questions, "
         "so this is outside my scope." + _DISCLAIMER)
 _SYS = (

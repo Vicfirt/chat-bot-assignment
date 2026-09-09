@@ -32,7 +32,7 @@ def normalize_question(q: str) -> str:
 class LRU:
     def __init__(self, maxsize: int) -> None:
         self.maxsize = max(1, maxsize)
-        self._d: "OrderedDict[Any, Any]" = OrderedDict()
+        self._d: OrderedDict[Any, Any] = OrderedDict()
         self._lock = threading.Lock()
         self.hits = 0
         self.misses = 0

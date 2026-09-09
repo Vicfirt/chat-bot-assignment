@@ -1,4 +1,3 @@
-import pytest
 
 from app.rag import cache
 from app.rag.cache import LRU, normalize_question
@@ -46,8 +45,8 @@ def test_index_fingerprint_changes_with_settings(monkeypatch):
 
 
 def test_run_rag_second_call_is_cached(tmp_path, monkeypatch):
-    from app.rag import retriever as rmod
     import app.rag.subgraph as sg
+    from app.rag import retriever as rmod
 
     r = rmod.ChromaRetriever(chroma_dir=str(tmp_path / "c"), collection="tcache")
     r.add_chunks([{"chunk_id": "p1", "text": "standard deduction 14,600 single",

@@ -1,0 +1,18 @@
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+# B905: zip(strict=) is noisy for tight local zips where lengths are known equal.
+ignore = ["B905"]
+
+[tool.ruff.lint.per-file-ignores]
+# Test fixtures carry long inline SSE / JSON payloads that don't wrap cleanly.
+"tests/**" = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+filterwarnings = ["ignore::DeprecationWarning"]

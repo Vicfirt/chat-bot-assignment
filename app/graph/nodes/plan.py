@@ -15,7 +15,8 @@ _STATUS_PATTERNS = [
 # Income amounts, most reliable first: "$85,000" / "85,000" / "$85k" / "85k".
 # A bare integer is a last resort and years are excluded so "my 2025 tax" and
 # "2 dependents" are never read as income.
-_MONEY_STRONG = re.compile(r"\$\s*(\d[\d,]*)(?:\.\d+)?\s*(k)?|\b(\d{1,3}(?:,\d{3})+)\b|\b(\d+)\s*k\b", re.I)
+_MONEY_STRONG = re.compile(
+    r"\$\s*(\d[\d,]*)(?:\.\d+)?\s*(k)?|\b(\d{1,3}(?:,\d{3})+)\b|\b(\d+)\s*k\b", re.I)
 _MONEY_BARE = re.compile(r"\b(\d{4,})\b")
 _DEP = re.compile(r"(\d+)\s+dependent", re.I)
 _YEAR = re.compile(r"\b(20\d{2})\b")

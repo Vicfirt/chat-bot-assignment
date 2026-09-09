@@ -1,6 +1,6 @@
 import pytest
 
-from app.rag.retriever import Chunk, ChromaRetriever, HybridRetriever
+from app.rag.retriever import ChromaRetriever, Chunk, HybridRetriever
 
 
 def _c(cid, text, *, block_type="prose", pub="Pub. 501", page=1, score=0.0):

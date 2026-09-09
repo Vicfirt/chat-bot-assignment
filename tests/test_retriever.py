@@ -1,4 +1,4 @@
-from app.rag.retriever import Chunk, ChromaRetriever
+from app.rag.retriever import ChromaRetriever, Chunk
 
 
 def _chunks():

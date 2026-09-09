@@ -107,7 +107,6 @@ def test_chunk_blocks_windows_prose_but_keeps_small_tables_and_examples_atomic()
 
 
 def test_oversized_atomic_table_is_windowed_with_caption_kept():
-    from app.ingest.parse_chunk import _EMBED_MAX_TOKENS
 
     head = "[Table - Rates (Pub. 17 p.6)]"
     big = head + "\n" + "bracket | rate\n" * 4000  # far over the embed cap

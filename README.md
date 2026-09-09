@@ -1,5 +1,12 @@
 # Agentic RAG Tax Chatbot
 
+![python](https://img.shields.io/badge/python-3.11-blue)
+![lint](https://img.shields.io/badge/lint-ruff-black)
+![tests](https://img.shields.io/badge/tests-pytest-green)
+![LLM](https://img.shields.io/badge/LLM-llama3.2%3A1b%20%7C%20dummy-orange)
+<!-- once pushed to GitHub with Actions enabled, add:
+![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg) -->
+
 An Agentic RAG chatbot (LangGraph) that answers U.S. federal individual income
 tax questions grounded in IRS publications (Pub. 17, 501, 505) and performs
 deterministic federal tax estimates.
@@ -55,6 +62,35 @@ Individual tax rules are high-stakes and easy to misread. This assistant:
 
 Three core services: **Streamlit UI** -> **FastAPI** (hosts the LangGraph app +
 embedded Chroma) -> **Ollama** (local LLM; `LLM_MODE=dummy` bypasses it).
+
+```mermaid
+flowchart LR
+    U["Streamlit UI<br/>live step trace"] -->|"POST /chat/stream (SSE)"| API
+
+    subgraph API["FastAPI  ·  app/api/main.py"]
+        RC{{"response cache<br/>hit → ~1 ms"}}
+        subgraph MG["main LangGraph — 7 nodes"]
+            direction LR
+            T[triage] --> P[plan] --> R[retrieve] & C[calculate]
+            R & C --> S[synthesize] --> G[guardrails] --> V[validate]
+            V -.retry.-> R
+        end
+        RC -.miss.-> MG
+    end
+
+    R -->|"tool #1"| RAG
+    subgraph RAG["RAG subgraph — app/rag/subgraph.py"]
+        direction LR
+        EQ[expand_query] --> RCand[retrieve_candidates] --> RR[rerank] --> GD[grade_docs] --> AC[assemble_context]
+        GD -.broaden.-> EQ
+    end
+
+    C -->|"tool #2"| CALC["estimate_tax()<br/>deterministic, no LLM"]
+    RAG --> CHROMA[("Chroma<br/>+ BM25 index")]
+    T & EQ & S -->|"LLM calls"| OLLAMA(["Ollama<br/>llama3.2:1b  /  dummy"])
+
+    API -.->|"/metrics · JSON logs"| OBS["Prometheus · Grafana · Loki<br/>(compose profile)"]
+```
 
 The UI calls `POST /chat/stream` (server-sent events): each **main-graph** node
 emits its `record_step` as it finishes, and the UI appends it to a live
@@ -261,7 +297,9 @@ app/
 eval/                 questions.yaml, run_eval.py, retrieval_metrics.py
 loadtest/run_load.py  async load generator + report writer
 observability/        Prometheus / Grafana / Loki / Promtail config
-docs/                 generated eval-results.md/.json, loadtest-results.md
+docs/                 generated eval-results*.md/.json, loadtest-results*.md
+.github/workflows/    ci.yml — ruff lint + pytest on push/PR
+Dockerfile · docker-compose.yml · pyproject.toml (ruff + pytest) · requirements.lock
 ```
 
 ## Evaluation and performance — results
@@ -591,7 +629,8 @@ Explore → Loki:
 ### Tests / eval / load test
 
 ```bash
-make test                                              # LLM_MODE=dummy python -m pytest -q
+make lint                                              # ruff check .  (config in pyproject.toml)
+make test                                              # LLM_MODE=dummy python -m pytest -q  (106 tests, ~40 s)
 
 # functional + retrieval eval (any LLM_MODE; ollama for real route/answer quality)
 LLM_MODE=ollama LLM_MODEL=llama3.2:1b OLLAMA_BASE_URL=http://localhost:11434 \

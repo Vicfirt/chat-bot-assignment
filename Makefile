@@ -1,10 +1,13 @@
-.PHONY: install lock test ingest up up-obs down eval loadtest
+.PHONY: install lock lint test ingest up up-obs down eval loadtest
 
 install:
 	pip install -r requirements.lock
 
 lock:
 	uv pip compile requirements.txt -o requirements.lock
+
+lint:
+	ruff check .
 
 test:
 	LLM_MODE=dummy python -m pytest -q

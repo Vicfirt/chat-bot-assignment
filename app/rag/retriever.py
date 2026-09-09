@@ -148,7 +148,7 @@ class ChromaRetriever:
             )
         ]
 
-    def search(self, query: str, k: int) -> list[Chunk]:  # dense-only; hybrid path is HybridRetriever
+    def search(self, query: str, k: int) -> list[Chunk]:  # dense-only; hybrid is HybridRetriever
         return self.dense_search(query, k)
 
 

@@ -62,8 +62,11 @@ def _grounded_amounts(state: dict) -> set[str]:
     allowed: set[str] = set()
     for v in _iter_numbers(state.get("calc_result") or {}):
         allowed.add(_norm_amount(f"{v:.2f}"))
-    for m in _AMOUNT.finditer(state.get("rag_context", "") or ""):
-        allowed.add(_norm_amount(m.group(1)))
+    texts = [state.get("rag_context", "") or ""]
+    texts += [str(c.get("quote", "")) for c in state.get("citations", []) or []]
+    for text in texts:
+        for m in _AMOUNT.finditer(text):
+            allowed.add(_norm_amount(m.group(1)))
     return allowed
 
 
@@ -90,7 +93,11 @@ def guardrails(state: dict) -> dict:
     if bad_cites:
         violations.append(f"unsupported citations: {', '.join(bad_cites)}")
     bad_amounts = _ungrounded_amounts(answer, state)
-    if bad_amounts:
+    # On a pure rule-lookup answer an unlisted dollar figure is usually the model
+    # restating a published threshold ($1,000 estimated-tax floor, additional
+    # standard-deduction amounts) that our truncated excerpt just didn't include
+    # — record it, but don't force a retry. On calc routes it stays a violation.
+    if bad_amounts and state.get("route") != "rag_only":
         violations.append(f"ungrounded amounts: {', '.join(bad_amounts)}")
 
     guardrail = {

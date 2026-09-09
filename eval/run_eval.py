@@ -26,7 +26,8 @@ def score_item(item: dict, state: dict) -> dict:
     expected_pubs = {s["pub"] for s in item.get("expected_sources", [])}
     number_ok: bool | None = None
     if item.get("expected_number") is not None:
-        tt = (state.get("calc_result") or {}).get("total_tax")
+        calc = state.get("calc_result") or {}
+        tt = calc.get("tax_after_credits", calc.get("total_tax"))
         number_ok = tt is not None and abs(tt - item["expected_number"]) <= (item.get("tolerance") or 0)
     answer = state.get("final_answer", "")
     kw = _keywords(item["reference_answer"])

@@ -65,10 +65,10 @@
 - id: q09
   question: "Estimate my 2025 federal tax: married filing jointly, $150,000 income, 2 dependents."
   route_expected: rag_plus_calc
-  reference_answer: "Taxable income $118,500; tax about $15,898."
+  reference_answer: "Taxable income $118,500; about $15,898 before credits, then roughly $11,498 after a $4,400 Child Tax Credit for 2 children."
   expected_sources: [{pub: "Pub. 501", section: "Standard Deduction"}, {pub: "Pub. 17", section: "Standard Deduction"}]
   relevant_pages: [{pub: "Pub. 17", page: 97}, {pub: "Pub. 17", page: 127}]
-  expected_number: 15898
+  expected_number: 11498
   tolerance: 60
 - id: q10
   question: "How much federal tax do I owe on $60,000 income, single, no dependents, 2025?"

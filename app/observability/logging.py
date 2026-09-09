@@ -84,6 +84,10 @@ def configure_logging() -> None:
     root.setLevel(s.log_level.upper())
     for noisy in ("sentence_transformers", "chromadb", "httpx", "urllib3"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
+    # chromadb 0.5.x logs a broken-posthog-wrapper stack at ERROR on every client
+    # start ("capture() takes 1 positional argument but 3 were given"); it is
+    # cosmetic and unfixable from our side. Silence just that logger.
+    logging.getLogger("chromadb.telemetry").setLevel(logging.CRITICAL)
     _configured = True
 
 

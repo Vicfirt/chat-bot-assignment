@@ -11,6 +11,7 @@ from dataclasses import dataclass, replace
 from typing import Protocol
 
 import chromadb
+from chromadb.config import Settings as ChromaSettings
 
 from app.config import get_settings
 
@@ -67,7 +68,10 @@ class ChromaRetriever:
     def __init__(self, chroma_dir: str | None = None, collection: str | None = None,
                  embedding_model: str | None = None) -> None:
         s = get_settings()
-        self._client = chromadb.PersistentClient(path=chroma_dir or s.chroma_dir)
+        self._client = chromadb.PersistentClient(
+            path=chroma_dir or s.chroma_dir,
+            settings=ChromaSettings(anonymized_telemetry=False),
+        )
         self._collection = self._client.get_or_create_collection(
             name=collection or s.chroma_collection, metadata={"hnsw:space": "cosine"}
         )

@@ -1,13 +1,27 @@
 """Deterministic U.S. federal individual income tax estimator.
 
 Constants: IRS Rev. Proc. 2023-34 (tax year 2024). Tax year 2025 bracket
-thresholds are from Rev. Proc. 2024-40; the 2025 standard deduction reflects
-the increase enacted by the One Big Beautiful Bill Act (P.L. 119-21) and shown
-in the 2025 edition of IRS Pub. 17. This tool performs no retrieval.
+thresholds are from Rev. Proc. 2024-40; the 2025 standard deduction and the
+2025 Child Tax Credit amount reflect the One Big Beautiful Bill Act
+(P.L. 119-21) and the 2025 edition of IRS Pub. 17. This tool performs no
+retrieval.
+
+Simplifications (it is an *estimate*): every `dependents` count is assumed to
+be CTC-eligible qualifying children under 17; the Child Tax Credit is applied
+as non-refundable (capped at tax before credits) — the refundable Additional
+Child Tax Credit is not modelled; itemised deductions and other credits are
+out of scope.
 """
 from __future__ import annotations
 
 FILING_STATUSES = {"single", "married_joint", "married_separate", "head_of_household"}
+
+# Child Tax Credit per qualifying child. 2024: IRC §24 / Rev. Proc. 2023-34.
+# 2025: raised to $2,200 by P.L. 119-21 (One Big Beautiful Bill Act).
+CTC_PER_CHILD = {2024: 2_000, 2025: 2_200}
+# MAGI at which the credit starts phasing out ($50 per $1,000 over), IRC §24(b).
+CTC_PHASEOUT_START = {"married_joint": 400_000}
+CTC_PHASEOUT_DEFAULT = 200_000
 
 STANDARD_DEDUCTION = {
     2024: {
@@ -100,15 +114,34 @@ def estimate_tax(
         )
 
     total = round(total, 2)
-    effective = round(total / gross_income, 4) if gross_income > 0 else 0.0
+
+    ctc = _child_tax_credit(filing_status, gross_income, tax_year, dependents, total)
+    tax_after_credits = round(total - ctc, 2)
+    effective = round(tax_after_credits / gross_income, 4) if gross_income > 0 else 0.0
     return {
         "tax_year": tax_year,
         "filing_status": filing_status,
         "gross_income": float(gross_income),
+        "dependents": dependents,
         "standard_deduction": std,
         "taxable_income": round(taxable, 2),
         "bracket_breakdown": breakdown,
         "total_tax": total,
+        "child_tax_credit": ctc,
+        "tax_after_credits": tax_after_credits,
         "marginal_rate": marginal,
         "effective_rate": effective,
     }
+
+
+def _child_tax_credit(filing_status: str, gross_income: float, tax_year: int,
+                      dependents: int, tax_before_credits: float) -> float:
+    """Non-refundable Child Tax Credit, capped at the tax before credits."""
+    if dependents <= 0:
+        return 0.0
+    credit = CTC_PER_CHILD[tax_year] * dependents
+    start = CTC_PHASEOUT_START.get(filing_status, CTC_PHASEOUT_DEFAULT)
+    if gross_income > start:
+        steps = -(-(int(gross_income) - start) // 1_000)   # ceil to the next $1,000
+        credit = max(0, credit - 50 * steps)
+    return round(min(float(credit), tax_before_credits), 2)

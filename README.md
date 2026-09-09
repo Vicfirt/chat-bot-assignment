@@ -4,6 +4,24 @@ An Agentic RAG chatbot (LangGraph) that answers U.S. federal individual income
 tax questions grounded in IRS publications (Pub. 17, 501, 505) and performs
 deterministic federal tax estimates.
 
+## Where each requirement is met
+
+| Requirement | Implementation |
+|---|---|
+| LangGraph workflow, ≥ 5 nodes | `app/graph/main_graph.py` — 7 nodes (`triage, plan, retrieve, calculate, synthesize, guardrails, validate`) |
+| Autonomous decision-making / conditional routing | `triage` → 4 routes; loops in `grade_docs` and `validate` |
+| Decomposition into subtasks + independent execution | `plan` fans out to `retrieve` ∥ `calculate` (parallel superstep, fan-in at `synthesize`) — `route_after_plan` |
+| State management for intermediate results | `AgentState` TypedDict + `steps` reducer, `app/graph/state.py` |
+| ≥ 2 tools, ≥ 1 non-retrieval | `app/tools/retriever_tool.py` (RAG) + `app/tools/tax_calculator.py` (deterministic, no LLM) |
+| Modular RAG subgraph, not counted in the node budget | `app/rag/subgraph.py` — separate compiled graph, 5 nodes |
+| Text data source, quality processing | IRS Pub. 17 / 501 / 505; SHA-pinned download + structure-aware chunking in `app/ingest/` |
+| Open-source / dummy LLM + justification | `app/llm/provider.py` (pluggable `ollama` / `dummy`); trade-off in [Design rationale](#design-rationale-highlights) |
+| Streamlit UI showing agent steps + RAG output | `app/ui/streamlit_app.py` — live SSE step panel, retrieval funnel, citations |
+| Containerized; Dockerfile mandatory | `Dockerfile` (models baked in) + `docker-compose.yml` (UI + API + Ollama) |
+| Functional eval, 10–20 questions | `eval/questions.yaml` (15) + `eval/run_eval.py` → `docs/eval-results.md` |
+| Load test, 50–200 queries | `loadtest/run_load.py` (100) → `docs/loadtest-results.md` |
+| README: problem, architecture + rationale, results, install | this file |
+
 ## Problem and objectives
 
 Individual tax rules are high-stakes and easy to misread. This assistant:
@@ -90,13 +108,18 @@ level down, expanding the question into several targeted sub-queries.
   `rag_only` / `out_of_scope`.
 - **retrieve** — invokes the modular **RAG subgraph**. Tool #1 (retrieval). Runs
   on `rag_only` and (in parallel) `rag_plus_calc`.
-- **calculate** — deterministic `estimate_tax(...)`. Tool #2 (non-retrieval).
+- **calculate** — deterministic `estimate_tax(...)`: brackets + standard
+  deduction, plus a non-refundable Child Tax Credit ($2,000/child 2024,
+  $2,200/child 2025 per P.L. 119-21, with the §24 phase-out) — returns
+  `total_tax`, `child_tax_credit`, `tax_after_credits`. Tool #2 (non-retrieval).
   Runs on `needs_calc` and (in parallel) `rag_plus_calc`; a no-op if `plan`
   produced no `tax_profile`.
 - **synthesize** — LLM composes a cited answer from context and/or calc result.
 - **guardrails** — deterministic, no model call: redacts SSNs, and flags
   citations to pages that were never retrieved and dollar amounts that trace to
-  neither the calculator nor the retrieved context.
+  neither the calculator nor the retrieved context (on `rag_only` the amount
+  check is recorded but not a retry trigger — rule answers legitimately restate
+  published thresholds).
 - **validate** — checks citations, numeric consistency, and the guardrail
   findings; on failure it sends exactly one retry back to `retrieve`
   (re-running retrieve -> synthesize -> guardrails; `calculate` does not re-run,
@@ -319,11 +342,15 @@ Answers then depend on `llama3.2:3b` (non-deterministic, ~3–4 min/answer on CP
 ### Local (no Docker)
 
 ```bash
-make install
+make install                                           # pip install -r requirements.lock
 python -m app.ingest.build_index                       # needs internet, one time
 LLM_MODE=dummy uvicorn app.api.main:app --port 8000
 LLM_MODE=dummy streamlit run app/ui/streamlit_app.py   # separate shell
 ```
+
+`requirements.txt` is the top-level list; `requirements.lock` is the
+fully-pinned transitive resolution used by the Dockerfile and `make install`
+(regenerate with `make lock`, needs [`uv`](https://docs.astral.sh/uv/)).
 
 ### Observability (optional)
 
@@ -380,9 +407,10 @@ Explore → Loki:
 ```bash
 make test                                              # LLM_MODE=dummy python -m pytest -q
 LLM_MODE=dummy python -m eval.run_eval                  # writes docs/eval-results.md
-LLM_MODE=dummy python -m loadtest.run_load --api-url http://localhost:8000 --n 100 --concurrency 4
+LLM_MODE=dummy python -m loadtest.run_load --api-url http://localhost:8000 --n 100 --concurrency 4 --warmup 5
 # API must be running. Retrieval is lock-serialised (see "Concurrency"), so higher
-# concurrency mostly lengthens the warmup queue rather than the steady state.
+# concurrency mostly lengthens the warmup queue; --warmup drops the first N
+# cold-start requests from the latency stats.
 ```
 
 ## Further extensions

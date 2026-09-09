@@ -44,6 +44,22 @@ def test_amount_grounded_by_context_passes():
     assert guardrails(st)["guardrail"]["ungrounded_amounts"] == []
 
 
+def test_amount_grounded_by_citation_quote_passes():
+    st = _state("You must pay estimated tax if you expect to owe at least $1,000. [Pub. 17 p.97]",
+                calc_result={}, rag_context="",
+                citations=[{"pub": "Pub. 17", "page": 97,
+                            "quote": "...expect to owe at least $1,000 in tax..."}])
+    assert guardrails(st)["guardrail"]["ungrounded_amounts"] == []
+
+
+def test_rag_only_ungrounded_amount_is_recorded_but_not_a_violation():
+    st = _state("The additional standard deduction is $1,550. [Pub. 17 p.97]",
+                route="rag_only", calc_result={}, rag_context="")
+    out = guardrails(st)
+    assert out["guardrail"]["ungrounded_amounts"] == ["$1,550"]
+    assert out["guardrail"]["violations"] == []
+
+
 def test_validate_consumes_guardrail_violations_and_retries():
     st = {"route": "rag_only", "final_answer": "answer [Pub. 9 p.1]",
           "citations": [{"pub": "Pub. 17"}], "retry_count": 0,

@@ -6,8 +6,10 @@ ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/app \
 RUN useradd -m app
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# requirements.lock is the fully-pinned transitive resolution (uv pip compile);
+# requirements.txt is the human-maintained top level.
+COPY requirements.lock .
+RUN pip install --no-cache-dir -r requirements.lock
 
 # Bake the embedding + reranker models into the image so retrieval needs no
 # runtime download.

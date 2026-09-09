@@ -24,13 +24,20 @@ def _calc_ok(state: dict) -> dict | None:
 
 
 def _figure_line(r: dict) -> str:
-    return (
+    ctc = r.get("child_tax_credit", 0)
+    headline = r.get("tax_after_credits", r["total_tax"])
+    line = (
         f"Estimated {r['tax_year']} federal income tax: "
-        f"${r['total_tax']:,.2f} on taxable income ${r['taxable_income']:,.2f} "
+        f"${headline:,.2f} on taxable income ${r['taxable_income']:,.2f} "
         f"({r['filing_status'].replace('_', ' ')}, standard deduction "
-        f"${r['standard_deduction']:,.0f}). Marginal rate "
-        f"{r['marginal_rate'] * 100:.0f}%, effective rate {r['effective_rate'] * 100:.1f}%."
+        f"${r['standard_deduction']:,.0f}"
     )
+    if ctc:
+        line += (f"; ${r['total_tax']:,.2f} before a ${ctc:,.2f} Child Tax Credit "
+                 f"for {r['dependents']} dependent(s)")
+    line += (f"). Marginal rate {r['marginal_rate'] * 100:.0f}%, "
+             f"effective rate {r['effective_rate'] * 100:.1f}%.")
+    return line
 
 
 def _build_prompt(state: dict) -> str:

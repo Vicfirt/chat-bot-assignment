@@ -43,7 +43,8 @@ def percentiles(latencies_ms: list[float]) -> dict:
             "p99": round(q[98], 1), "mean": round(statistics.fmean(s), 1), "max": round(s[-1], 1)}
 
 
-async def run_load(api_url: str, n: int = 100, concurrency: int = 4) -> dict:
+async def run_load(api_url: str, n: int = 100, concurrency: int = 4,
+                   warmup: int = 0) -> dict:
     sem = asyncio.Semaphore(concurrency)
     latencies: list[float] = []
     node_times: dict[str, list[float]] = {}
@@ -58,9 +59,10 @@ async def run_load(api_url: str, n: int = 100, concurrency: int = 4) -> dict:
                 try:
                     r = await client.post(f"{api_url}/chat", json={"question": q})
                     r.raise_for_status()
-                    latencies.append((time.perf_counter() - t0) * 1000)
-                    for step in r.json().get("steps", []):
-                        node_times.setdefault(step["node"], []).append(step["duration_ms"])
+                    if i >= warmup:      # discard cold-start requests from the stats
+                        latencies.append((time.perf_counter() - t0) * 1000)
+                        for step in r.json().get("steps", []):
+                            node_times.setdefault(step["node"], []).append(step["duration_ms"])
                 except Exception:  # noqa: BLE001
                     errors += 1
 
@@ -69,9 +71,9 @@ async def run_load(api_url: str, n: int = 100, concurrency: int = 4) -> dict:
         wall = time.perf_counter() - wall0
 
     return {
-        "n": n, "concurrency": concurrency, "errors": errors,
+        "n": n, "concurrency": concurrency, "errors": errors, "warmup": warmup,
         "throughput_rps": round((n - errors) / wall, 2) if wall else 0.0,
-        "latency_ms": percentiles(latencies) if latencies else {},
+        "latency_ms": percentiles(latencies) if latencies else {},   # excludes warmup
         "per_node_ms": {k: round(statistics.fmean(v), 1) for k, v in node_times.items()},
         "latencies": latencies,
     }
@@ -87,9 +89,12 @@ def write_report(result: dict, out_md: str = "docs/loadtest-results.md",
     bottleneck = max(per_node, key=per_node.get) if per_node else "unknown"
     lines = [
         "# Load Test Results", "",
-        f"- Requests: {result['n']}  |  Concurrency: {result['concurrency']}  |  Errors: {result['errors']}",
+        f"- Requests: {result['n']}  |  Concurrency: {result['concurrency']}  |  "
+        f"Errors: {result['errors']}  |  Warmup discarded: {result.get('warmup', 0)}",
         f"- Throughput: {result['throughput_rps']} req/s", "",
-        "## Latency (ms)", "",
+        "## Latency (ms)"
+        + (f" — first {result['warmup']} requests excluded" if result.get("warmup") else ""),
+        "",
         "| p50 | p90 | p95 | p99 | mean | max |",
         "|-----|-----|-----|-----|------|-----|",
         "| {p50} | {p90} | {p95} | {p99} | {mean} | {max} |".format(**result["latency_ms"]),
@@ -137,8 +142,10 @@ def main() -> None:
     ap.add_argument("--api-url", default="http://localhost:8000")
     ap.add_argument("--n", type=int, default=100)
     ap.add_argument("--concurrency", type=int, default=4)
+    ap.add_argument("--warmup", type=int, default=0,
+                    help="discard the first N requests from the latency stats")
     args = ap.parse_args()
-    result = asyncio.run(run_load(args.api_url, args.n, args.concurrency))
+    result = asyncio.run(run_load(args.api_url, args.n, args.concurrency, args.warmup))
     write_report(result)
     print(result)
 

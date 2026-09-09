@@ -17,7 +17,7 @@ def validate(state: dict) -> dict:
 
     calc = state.get("calc_result") or {}
     if "total_tax" in calc:
-        tt = calc["total_tax"]
+        tt = calc.get("tax_after_credits", calc["total_tax"])
         if str(int(tt)) not in answer.replace(",", "") and f"{tt:,.0f}" not in answer:
             reasons.append("calc total not reflected in answer")
 

@@ -7,6 +7,8 @@ from app.ingest.download import download_all, load_sources
 from app.ingest.parse_chunk import ChunkConfig, chunk_blocks, parse_pdf
 from app.rag.retriever import ChromaRetriever
 
+MIN_EXPECTED_CHUNKS = 800
+
 
 def build_index(sources_path: str | Path | None = None) -> int:
     sources_path = Path(sources_path or "app/ingest/sources.yaml")
@@ -32,7 +34,17 @@ def build_index(sources_path: str | Path | None = None) -> int:
     for c in all_chunks:
         by_type[c["block_type"]] = by_type.get(c["block_type"], 0) + 1
     print(f"chunks by type: {by_type}")
-    return retriever.count()
+
+    count = retriever.count()
+    # The three IRS pubs produce ~1.5k chunks. Well below that means a truncated
+    # download or a parser failure — fail loudly rather than serve a thin index
+    # that silently returns no citations.
+    if count < MIN_EXPECTED_CHUNKS:
+        raise RuntimeError(
+            f"index has only {count} chunks (< {MIN_EXPECTED_CHUNKS}); "
+            f"expected ~1.5k from {len(paths)} PDFs — check the downloads and parser"
+        )
+    return count
 
 
 if __name__ == "__main__":

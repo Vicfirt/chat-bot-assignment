@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      LLM_MODE: dummy
+      HF_HOME: ${{ github.workspace }}/.hf-cache
+      SENTENCE_TRANSFORMERS_HOME: ${{ github.workspace }}/.hf-cache
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      # Cache the sentence-transformers / cross-encoder weights the retriever
+      # tests load (~130 MB) so only the first run pays the download.
+      - uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.hf-cache
+          key: hf-${{ hashFiles('requirements.lock') }}
+
+      - run: pip install --no-cache-dir -r requirements.lock
+
+      - run: python -m pytest -q

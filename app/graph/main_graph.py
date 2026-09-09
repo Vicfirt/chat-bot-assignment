@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from langgraph.graph import END, StateGraph
 
+from app.config import get_settings
 from app.graph.nodes.calculate import calculate
 from app.graph.nodes.guardrails import guardrails
 from app.graph.nodes.plan import plan, route_after_plan
@@ -59,7 +60,8 @@ def run_agent(question: str, chat_history: list[dict] | None = None,
               callbacks: list | None = None) -> dict:
     state = {**_prepare(chat_history), "question": question}
     return _compiled.invoke(
-        state, config={"callbacks": callbacks or [], "recursion_limit": 25},
+        state, config={"callbacks": callbacks or [],
+                       "recursion_limit": get_settings().graph_recursion_limit},
     )
 
 
@@ -68,6 +70,7 @@ def run_agent_stream(question: str, chat_history: list[dict] | None = None,
     """Yield one `{node: node_output}` dict per graph step as it completes."""
     state = {**_prepare(chat_history), "question": question}
     return _compiled.stream(
-        state, config={"callbacks": callbacks or [], "recursion_limit": 25},
+        state, config={"callbacks": callbacks or [],
+                       "recursion_limit": get_settings().graph_recursion_limit},
         stream_mode="updates",
     )

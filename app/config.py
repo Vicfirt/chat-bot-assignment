@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -6,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    llm_mode: str = "ollama"
+    llm_mode: Literal["ollama", "dummy"] = "ollama"
     llm_model: str = "llama3.2:3b"
     ollama_base_url: str = "http://ollama:11434"
     # When llm_mode="ollama" but the model/server is unreachable, use the dummy LLM
@@ -23,6 +24,7 @@ class Settings(BaseSettings):
     min_docs: int = 3
     context_token_budget: int = 900
     max_retries: int = 1
+    graph_recursion_limit: int = 25          # LangGraph superstep cap (safety net)
 
     # --- caching (in-process) ---
     cache_enabled: bool = True
@@ -30,7 +32,7 @@ class Settings(BaseSettings):
     cache_rag_size: int = 256                 # RAG-subgraph result LRU entries
 
     # --- retrieval (all tunable) ---
-    retrieval_mode: str = "hybrid"            # "hybrid" | "dense" | "bm25"
+    retrieval_mode: Literal["hybrid", "dense", "bm25"] = "hybrid"
     dense_top_k: int = 20                     # candidates from the vector store
     bm25_top_k: int = 20                      # candidates from the keyword index
     rrf_k: int = 60                           # reciprocal-rank-fusion constant
@@ -42,7 +44,7 @@ class Settings(BaseSettings):
     grade_min_score: float = 0.0             # drop candidates below this final score
 
     # --- ingestion / chunking (all tunable) ---
-    pdf_extractor: str = "pdfplumber"          # "pdfplumber" (layout+tables) or "pypdf"
+    pdf_extractor: Literal["pdfplumber", "pypdf"] = "pdfplumber"
     chunk_target_tokens: int = 450             # embedder tokens; bge-small caps at 512
     chunk_overlap_tokens: int = 64
     chunk_min_tokens: int = 32                 # drop fragments smaller than this

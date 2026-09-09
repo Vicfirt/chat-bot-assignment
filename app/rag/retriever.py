@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 from dataclasses import dataclass, replace
 from typing import Protocol
 
@@ -14,6 +15,13 @@ import chromadb
 from app.config import get_settings
 
 _log = logging.getLogger(__name__)
+
+# The embedded Chroma client (SQLite + hnswlib) and the torch models are shared
+# process-globals and are not safe under FastAPI's request threadpool — at
+# concurrency >= 2 the native layer segfaults. Serialise every access with one
+# re-entrant lock. Retrieval is then serial (~100 ms warm), while the minutes-
+# long LLM synthesis still overlaps across threads. See README "concurrency".
+_RETRIEVAL_LOCK = threading.RLock()
 
 _TOKEN_RE = re.compile(r"[a-z0-9$%]+")
 _AMOUNT_RE = re.compile(
@@ -74,7 +82,8 @@ class ChromaRetriever:
         return self._model
 
     def _encode(self, texts: list[str]) -> list[list[float]]:
-        return self._load_model().encode(texts, normalize_embeddings=True).tolist()
+        with _RETRIEVAL_LOCK:
+            return self._load_model().encode(texts, normalize_embeddings=True).tolist()
 
     def _embed(self, texts: list[str]) -> list[list[float]]:
         # Cache single-text (query) embeddings only; batch calls are ingestion.
@@ -95,32 +104,37 @@ class ChromaRetriever:
 
     def token_count(self, text: str) -> int:
         """Length of `text` in the embedding model's own tokens."""
-        return len(self._load_model().tokenizer.encode(text, add_special_tokens=False))
+        with _RETRIEVAL_LOCK:
+            return len(self._load_model().tokenizer.encode(text, add_special_tokens=False))
 
     def add_chunks(self, chunks: list[dict]) -> None:
         if not chunks:
             return
         keys = ("pub", "section", "page", "source_url", "tax_year")
-        self._collection.upsert(
-            ids=[c["chunk_id"] for c in chunks],
-            documents=[c["text"] for c in chunks],
-            embeddings=self._embed([c["text"] for c in chunks]),
-            metadatas=[{**{k: c[k] for k in keys}, "block_type": c.get("block_type", "prose")}
-                       for c in chunks],
-        )
+        with _RETRIEVAL_LOCK:
+            self._collection.upsert(
+                ids=[c["chunk_id"] for c in chunks],
+                documents=[c["text"] for c in chunks],
+                embeddings=self._embed([c["text"] for c in chunks]),
+                metadatas=[{**{k: c[k] for k in keys}, "block_type": c.get("block_type", "prose")}
+                           for c in chunks],
+            )
 
     def count(self) -> int:
-        return self._collection.count()
+        with _RETRIEVAL_LOCK:
+            return self._collection.count()
 
     def all_documents(self) -> list[dict]:
-        got = self._collection.get(include=["documents", "metadatas"])
+        with _RETRIEVAL_LOCK:
+            got = self._collection.get(include=["documents", "metadatas"])
         return [{"chunk_id": i, "text": d, "meta": m}
                 for i, d, m in zip(got["ids"], got["documents"], got["metadatas"])]
 
     def dense_search(self, query: str, k: int, where: dict | None = None) -> list[Chunk]:
-        res = self._collection.query(
-            query_embeddings=self._embed([query]), n_results=k, where=where or None
-        )
+        with _RETRIEVAL_LOCK:
+            res = self._collection.query(
+                query_embeddings=self._embed([query]), n_results=k, where=where or None
+            )
         if not res.get("ids") or not res["ids"][0]:
             return []
         return [
@@ -149,9 +163,13 @@ class HybridRetriever:
             return
         from rank_bm25 import BM25Okapi
 
-        self._bm25_docs = self._dense.all_documents()
-        corpus = [_tokenize(d["text"]) for d in self._bm25_docs]
-        self._bm25 = BM25Okapi(corpus) if corpus else False
+        with _RETRIEVAL_LOCK:
+            if self._bm25 is not None:      # built while we waited for the lock
+                return
+            docs = self._dense.all_documents()
+            corpus = [_tokenize(d["text"]) for d in docs]
+            self._bm25_docs = docs
+            self._bm25 = BM25Okapi(corpus) if corpus else False
 
     def _bm25_search(self, query: str, k: int) -> list[Chunk]:
         self._ensure_bm25()
@@ -190,7 +208,8 @@ class HybridRetriever:
         if s.rerank_enabled:
             try:
                 pool = chunks[: s.rerank_top_n]
-                raw = self._ensure_reranker().predict([(question, c.text) for c in pool])
+                with _RETRIEVAL_LOCK:
+                    raw = self._ensure_reranker().predict([(question, c.text) for c in pool])
                 rescored = sorted(
                     (replace(c, score=float(sc)) for c, sc in zip(pool, raw)),
                     key=lambda c: c.score, reverse=True,

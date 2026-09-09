@@ -99,12 +99,14 @@ def write_report(result: dict, out_md: str = "docs/loadtest-results.md",
         f"`{bottleneck}` is the dominant per-request cost (mean {per_node.get(bottleneck, 0)} ms). "
         "In `dummy` mode this is vector search over the embedded Chroma index; in `ollama` "
         "mode LLM generation in `synthesize` typically dominates instead.",
-        "", "## Optimization recommendations", "",
-        "1. Cut LLM calls on the retrieval path: replace the `grade_docs` LLM grader with the "
-        "score threshold only, and merge `expand_query` into a single call — removes ~2 LLM "
-        "round-trips per request.",
-        "2. Add a semantic response cache keyed on normalized question + route; skip the "
-        "`validate` retry when citations are present and the calc number is already in the draft.",
+        "", "## Notes", "",
+        "- Retrieval is serialised by one process-wide lock (see README "
+        "\"concurrency\"), so at concurrency > 1 the first requests queue behind the "
+        "one-time model + HNSW warmup — that is the p99/max tail here. Steady state "
+        "(p50) is unaffected.",
+        "- Not yet done: an end-to-end response cache keyed on normalised question + "
+        "route (skips synthesis too), and skipping the `validate` retry when the draft "
+        "already carries citations and the calc number.",
     ]
     Path(out_md).parent.mkdir(parents=True, exist_ok=True)
     Path(out_md).write_text("\n".join(lines) + "\n")

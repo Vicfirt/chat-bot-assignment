@@ -1,28 +1,29 @@
 # Load Test Results
 
-- Requests: 100  |  Concurrency: 1  |  Errors: 0
-- Throughput: 9.89 req/s
+- Requests: 100  |  Concurrency: 4  |  Errors: 0
+- Throughput: 7.57 req/s
 
 ## Latency (ms)
 
 | p50 | p90 | p95 | p99 | mean | max |
 |-----|-----|-----|-----|------|-----|
-| 37.4 | 67.3 | 72.1 | 150.2 | 101.0 | 6700.6 |
+| 19.2 | 656.3 | 1066.1 | 10450.2 | 528.4 | 10561.6 |
 
 ## Per-node mean (ms)
 
-- retrieve: 108.8
+- retrieve: 694.7
 - triage: 0.0
 - calculate: 0.0
 - synthesize: 0.0
+- guardrails: 0.0
 - validate: 0.0
 - plan: 0.0
 
 ## Bottleneck
 
-`retrieve` is the dominant per-request cost (mean 108.8 ms). In `dummy` mode this is vector search over the embedded Chroma index; in `ollama` mode LLM generation in `synthesize` typically dominates instead.
+`retrieve` is the dominant per-request cost (mean 694.7 ms). In `dummy` mode this is vector search over the embedded Chroma index; in `ollama` mode LLM generation in `synthesize` typically dominates instead.
 
-## Optimization recommendations
+## Notes
 
-1. Cut LLM calls on the retrieval path: replace the `grade_docs` LLM grader with the score threshold only, and merge `expand_query` into a single call — removes ~2 LLM round-trips per request.
-2. Add a semantic response cache keyed on normalized question + route; skip the `validate` retry when citations are present and the calc number is already in the draft.
+- Retrieval is serialised by one process-wide lock (see README "concurrency"), so at concurrency > 1 the first requests queue behind the one-time model + HNSW warmup — that is the p99/max tail here. Steady state (p50) is unaffected.
+- Not yet done: an end-to-end response cache keyed on normalised question + route (skips synthesis too), and skipping the `validate` retry when the draft already carries citations and the calc number.

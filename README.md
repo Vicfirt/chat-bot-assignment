@@ -161,21 +161,22 @@ the main retrieval lever; the cross-encoder rerank already contributes a clear
 
 ### Load test — `docs/loadtest-results.md`
 
-100 requests, `LLM_MODE=dummy`, embedded Chroma warm, run at **concurrency 1**
-(see the caveat below).
+100 requests, `LLM_MODE=dummy`, **concurrency 4**, 0 errors.
 
 | p50 | p90 | p95 | p99 | mean | max | throughput |
 |-----|-----|-----|-----|------|-----|------------|
-| 37.4 ms | 67.3 ms | 72.1 ms | 150.2 ms | 101.0 ms | 6700.6 ms | 9.9 req/s |
+| 19 ms | 656 ms | 1066 ms | 10450 ms | 528 ms | 10562 ms | 7.6 req/s |
 
-`max` is the first (cold) request that loads the HNSW index into memory. A
-latency histogram is written to `docs/loadtest-latency.png` locally (gitignored).
+Steady-state p50 is ~19 ms; the p99/max tail is the first few requests all
+queuing behind the one-time model + HNSW warmup, since retrieval is serialised
+by a single lock (below). A latency histogram is written to
+`docs/loadtest-latency.png` locally (gitignored).
 
-**Bottleneck node: `retrieve`** — mean 108.8 ms per request, essentially the
-entire request budget (`triage`, `plan`, `calculate`, `synthesize`, `validate`
-are ~0 ms in `dummy` mode). In `dummy` mode this cost is vector search over the
-embedded Chroma index; in `ollama` mode `synthesize` (LLM generation on CPU)
-typically dominates instead.
+**Bottleneck node: `retrieve`** — mean ~695 ms per request, essentially the
+entire request budget (`triage`, `plan`, `calculate`, `synthesize`,
+`guardrails`, `validate` are ~0 ms in `dummy` mode). In `dummy` mode this cost
+is vector search over the embedded Chroma index; in `ollama` mode `synthesize`
+(LLM generation on CPU) typically dominates instead.
 
 **Caching** (`app/rag/cache.py`, in-process, `CACHE_ENABLED=false` to disable):
 
@@ -189,47 +190,44 @@ so a re-ingest or a knob change invalidates them automatically. Hit/miss counts
 are on `/metrics` as `rag_cache_events_total`.
 
 Further optimizations not done here: an end-to-end response cache keyed on
-normalized question + route (skips synthesis too); replacing the `grade_docs`
-step with a pure score threshold; and moving both caches to Redis so multiple
-API workers share them — which also unblocks the concurrency issue below.
+normalized question + route (skips synthesis too), and replacing the
+`grade_docs` step with a pure score threshold. Moving both caches to Redis is
+the step that lets multiple API workers share them (see concurrency below).
 
-**Known issue — concurrency.** The API is one `uvicorn` process; FastAPI runs
-the sync `/chat` handler on its threadpool, so concurrent requests do run on
-separate threads — but they share process-global state that is not built for
-that: one `chromadb.PersistentClient` (SQLite + hnswlib), one
-`SentenceTransformer`, one `CrossEncoder`, the BM25 index, and the `_compiled`
-graph. At concurrency ≥ 2 the retrieval path segfaults the worker (native
-crash, no Python traceback) — the shared Chroma client is the prime suspect.
-The load test is therefore pinned to concurrency 1.
+**Concurrency.** The API is one `uvicorn` process; FastAPI runs the sync
+`/chat` handler on its threadpool, so concurrent requests do run on separate
+threads — but they share process-global state that isn't built for that: one
+`chromadb.PersistentClient` (SQLite + hnswlib), one `SentenceTransformer`, one
+`CrossEncoder`, the BM25 index, the `_compiled` graph. Left unguarded, the
+retrieval path segfaulted the worker at concurrency ≥ 2 (native crash, no
+traceback) — the shared Chroma client the prime suspect.
 
-**How it would be fixed** (design, not implemented — it is infrastructure, not
-RAG, work):
+*Implemented — #1, serialise the unsafe section.* One process-wide
+`threading.RLock` (`app/rag/retriever.py`) around every Chroma call and every
+torch forward pass (`.encode` / `.predict`). Retrieval is now serial (~700 ms
+in the load test, dominated by the cold model/HNSW warmup the first requests
+queue behind); the minutes-long LLM synthesis still overlaps across threads.
+BM25 and the loaded models are read-only and safe to share — only the Chroma
+client and inference are guarded. Load test now runs clean at concurrency 4.
 
-1. *Minimal correct fix — serialize the unsafe section.* A `threading.Lock`
-   around the Chroma query + `.encode` / `.predict` in `HybridRetriever`. ~10
-   lines, stays single-process. Retrieval becomes serial (fine at low QPS —
-   it's ~100 ms warm), while the 3–4 min LLM synthesis still overlaps across
-   threads. BM25 (`rank_bm25`) and the loaded models are read-only and safe to
-   share; only the Chroma client and the torch forward passes need guarding.
-2. *Per-worker Chroma clients.* One `PersistentClient` per thread/worker
-   pointing at the same read-only path (SQLite handles multiple readers), so
-   retrieval parallelises. Model instances: a small pool, or keep a lock just
-   around inference.
-3. *Async request path.* `async def chat` + `await _compiled.ainvoke(...)` /
-   `async for … in _compiled.astream(...)` (LangGraph supports both; sync nodes
-   run in a threadpool). LLM calls move to `ollama.AsyncClient` — the real win,
-   since a request awaiting a multi-minute generation no longer holds a thread.
-   CPU-bound bits (embedding, rerank, BM25) go through `asyncio.to_thread` or a
-   `ProcessPoolExecutor`; Chroma calls (no async client) stay wrapped with #2.
-4. *Scale out.* Move retrieval + models into a separate service (HTTP/gRPC) so
-   the agent API holds no native state and can run `uvicorn --workers N` behind
-   nginx/traefik; the in-process LRUs move to **Redis** (see caching above).
-   Ollama then becomes the throughput ceiling — answered with multiple Ollama
-   replicas or a batching server (vLLM/TGI), out of scope for a local, no-paid-API
-   prototype.
+*Design — not implemented (infrastructure, not RAG):*
 
-For this codebase the realistic path is **#1 now** (kill the segfault) and
-**#3 + #2** as the documented target; #4 only if it needs to serve real traffic.
+2. *Per-worker Chroma clients* — one `PersistentClient` per thread/worker on
+   the same read-only path (SQLite is multi-reader), so retrieval parallelises;
+   a small model pool or a lock kept only around inference.
+3. *Async request path* — `async def chat` + `await _compiled.ainvoke` /
+   `astream` (LangGraph supports both; sync nodes run in a threadpool). LLM
+   calls move to `ollama.AsyncClient` — the real win, since a request awaiting
+   a multi-minute generation no longer holds a thread. CPU-bound bits go
+   through `asyncio.to_thread` / a `ProcessPoolExecutor`; Chroma stays wrapped
+   with #2.
+4. *Scale out* — retrieval + models as a separate service (HTTP/gRPC) so the
+   agent API holds no native state and runs `uvicorn --workers N` behind a
+   proxy; the LRUs move to **Redis**. Ollama then becomes the ceiling — multiple
+   replicas or a batching server (vLLM/TGI), out of scope for a local
+   no-paid-API prototype.
+
+Realistic path: #1 is done; #3 + #2 are the target; #4 only for real traffic.
 
 **No request cancellation.** `/chat` runs the graph to completion regardless of
 the client; there is no abort path (it would need the async/multi-worker rework
@@ -335,18 +333,18 @@ Explore → Loki:
 ```bash
 make test                                              # LLM_MODE=dummy python -m pytest -q
 LLM_MODE=dummy python -m eval.run_eval                  # writes docs/eval-results.md
-LLM_MODE=dummy python -m loadtest.run_load --api-url http://localhost:8000 --n 100 --concurrency 1
-# API must be running; see the concurrency caveat above before raising --concurrency
+LLM_MODE=dummy python -m loadtest.run_load --api-url http://localhost:8000 --n 100 --concurrency 4
+# API must be running. Retrieval is lock-serialised (see "Concurrency"), so higher
+# concurrency mostly lengthens the warmup queue rather than the steady state.
 ```
 
 ## Further extensions
 
 Deliberately left out to keep the prototype lean; each is a bounded add-on:
 
-- **Concurrency** — the top reliability item; full design under *Known issue —
-  concurrency* above (lock the Chroma/model critical section now; async request
-  path + per-worker clients as the target; a retrieval service + multi-worker +
-  Redis to scale).
+- **Concurrency** — #1 (lock the Chroma/model critical section) is done; the
+  async request path + per-worker clients, and a retrieval service +
+  multi-worker + Redis to scale, are designed under *Concurrency* above.
 - **Request cancellation** — a cancel endpoint that trips a flag checked between
   nodes / aborts the Ollama call; depends on the async rework above.
 - **Langfuse** (LLM trace tree) — `run_agent` / `run_agent_stream` already take a

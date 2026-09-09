@@ -56,11 +56,13 @@ Individual tax rules are high-stakes and easy to misread. This assistant:
 Three core services: **Streamlit UI** -> **FastAPI** (hosts the LangGraph app +
 embedded Chroma) -> **Ollama** (local LLM; `LLM_MODE=dummy` bypasses it).
 
-The UI calls `POST /chat/stream` (server-sent events): each graph node emits its
-`record_step` as it finishes, and the UI appends it to a live `st.status`
-panel — so a multi-minute CPU run shows `triage ✓ → retrieve ✓ → rerank ✓ →
-synthesize…` instead of one opaque spinner. `POST /chat` (blocking JSON) is
-kept for programmatic use and the load test.
+The UI calls `POST /chat/stream` (server-sent events): each **main-graph** node
+emits its `record_step` as it finishes, and the UI appends it to a live
+`st.status` panel — so a multi-minute CPU run shows
+`triage ✓ → plan ✓ → retrieve ✓ → calculate ✓ → synthesize…` instead of one
+opaque spinner. (RAG-subgraph nodes don't emit steps; their timings go to the
+structured logs and Prometheus.) `POST /chat` (blocking JSON) is kept for
+programmatic use and the load test.
 
 ### Main graph (7 nodes)
 
@@ -144,6 +146,24 @@ a table-first boost for amount questions), relevance grading, and context
 assembly with citations. The `candidates → reranked → kept` counts flow back to
 the API (`retrieval_funnel`) and show in the Streamlit trace panel.
 
+### Data source
+
+Three IRS publications for tax year 2025, chosen to cover the question space with
+minimal overlap:
+
+| Pub. | Role |
+|------|------|
+| **17** — *Your Federal Income Tax* | the master guide: brackets / rate schedules, standard deduction, filing status, dependents, estimated tax overview |
+| **501** — *Dependents, Standard Deduction, and Filing Information* | the authoritative detail on who is a dependent, filing-status tests, additional standard deduction |
+| **505** — *Tax Withholding and Estimated Tax* | estimated-tax thresholds, due dates, the $1,000 safe harbor |
+
+`app/ingest/sources.yaml` pins each PDF's URL and SHA-256. Ingestion
+(`app/ingest/parse_chunk.py`) is structure-aware: it splits on headings, keeps
+each table and each worked "Example" as one atomic chunk, drops index/TOC pages
+by numeric density, and measures every chunk in real `bge-small` tokens (≤ 512).
+The result is ~1,550 chunks carrying `pub` / `section` / `page` / `block_type`
+metadata — `build_index` fails loudly if the count comes out far below that.
+
 ### Tools
 
 | Tool | File | Kind |
@@ -173,13 +193,31 @@ the API (`retrieval_funnel`) and show in the Streamlit trace panel.
 - **Deterministic calculator, never LLM arithmetic** — tax math must be exact
   and testable.
 
+### Repository layout
+
+```
+app/
+  api/main.py         FastAPI: /chat, /chat/stream (SSE), /health, /metrics
+  graph/              main LangGraph: state.py, main_graph.py, nodes/
+  rag/                modular RAG subgraph: subgraph.py, retriever.py, cache.py, nodes/
+  tools/              retriever_tool.py (RAG) + tax_calculator.py (deterministic)
+  ingest/             sources.yaml, download.py, parse_chunk.py, build_index.py
+  llm/provider.py     pluggable ollama / dummy provider
+  observability/      logging.py (JSON), metrics.py (Prometheus)
+  ui/streamlit_app.py live-trace chat UI
+eval/                 questions.yaml, run_eval.py, retrieval_metrics.py
+loadtest/run_load.py  async load generator + report writer
+observability/        Prometheus / Grafana / Loki / Promtail config
+docs/                 generated eval-results.md/.json, loadtest-results.md
+```
+
 ## Evaluation and performance — results
 
 Both artifacts below are generated, not hand-written:
 `LLM_MODE=dummy python -m eval.run_eval` and
 `LLM_MODE=dummy python -m loadtest.run_load`.
 
-### Functional evaluation — `docs/eval-results.md` (+ `.json`)
+### Functional evaluation — [`docs/eval-results.md`](docs/eval-results.md) (+ `.json`)
 
 15 questions covering the three routes that run end to end (`rag_only`,
 `rag_plus_calc`, `out_of_scope`). `run_eval` writes both a markdown table and a
@@ -207,10 +245,11 @@ the triage guard deliberately biases every dollar-amount question toward
 `rag_plus_calc` so the returned figure always carries a citation. The calculator
 path itself is covered by `tests/test_tax_calculator.py` and by q08–q10.
 
-### Retrieval quality — `## Retrieval quality` section of the same file
+### Retrieval quality
 
-Judged at `(publication, page)` granularity against the `relevant_pages` labels
-in `eval/questions.yaml`, by invoking the RAG subgraph directly and reading its
+Offline metrics in the `## Retrieval quality` section of the same file, judged at
+`(publication, page)` granularity against the `relevant_pages` labels in
+`eval/questions.yaml`, by invoking the RAG subgraph directly and reading its
 `raw_hits` (post RRF fusion) → `reranked_hits` (post cross-encoder) →
 `graded_hits` (kept for the prompt).
 
@@ -229,24 +268,60 @@ recall (larger rerank pool, ±1-page label tolerance, better table chunking) is
 the main retrieval lever; the cross-encoder rerank already contributes a clear
 +0.13 MRR.
 
-### Load test — `docs/loadtest-results.md`
+### Load test — [`docs/loadtest-results.md`](docs/loadtest-results.md)
 
-100 requests, `LLM_MODE=dummy`, **concurrency 4**, 0 errors.
+100 requests, `LLM_MODE=dummy`, **concurrency 4**, 0 errors, first 5 discarded as
+warm-up.
 
 | p50 | p90 | p95 | p99 | mean | max | throughput |
 |-----|-----|-----|-----|------|-----|------------|
 | 19 ms | 656 ms | 1066 ms | 10450 ms | 528 ms | 10562 ms | 7.6 req/s |
+
+> These numbers predate the `--warmup` flag and the two-model (`1b` + `3b`) pass;
+> they are regenerated in that pass. The bottleneck analysis below does not
+> depend on the exact figures.
 
 Steady-state p50 is ~19 ms; the p99/max tail is the first few requests all
 queuing behind the one-time model + HNSW warmup, since retrieval is serialised
 by a single lock (below). A latency histogram is written to
 `docs/loadtest-latency.png` locally (gitignored).
 
-**Bottleneck node: `retrieve`** — mean ~695 ms per request, essentially the
-entire request budget (`triage`, `plan`, `calculate`, `synthesize`,
-`guardrails`, `validate` are ~0 ms in `dummy` mode). In `dummy` mode this cost
-is vector search over the embedded Chroma index; in `ollama` mode `synthesize`
-(LLM generation on CPU) typically dominates instead.
+#### Main bottleneck
+
+The dominant cost depends entirely on the LLM mode:
+
+- **`LLM_MODE=ollama` (real answers) — `synthesize`, i.e. LLM generation, by two
+  orders of magnitude.** Each `/chat` makes three `llama3.2:3b` calls on CPU:
+  `triage` classification (~10–30 s), `expand_query` rewrite (~10–30 s), and the
+  `synthesize` answer (~400 tokens, **~3–4 min**). Retrieval, the calculator, and
+  the guardrail/validate logic together are < 1 s. This is the deployed system's
+  bottleneck; the functional-eval wall-clock (~4–6 min/question) is almost
+  entirely these three calls. Exact per-node numbers land with the two-model
+  pass.
+- **`LLM_MODE=dummy` (the committed load test) — `retrieve`.** With the LLM
+  stubbed to a no-op, the load test isolates everything else: `retrieve` is
+  ~695 ms mean (dense + BM25 + cross-encoder rerank, lock-serialised) and every
+  other node is ~0 ms. This is the *retrieval-path* profile, not the deployed
+  system — useful for tuning retrieval without the LLM as a confound.
+
+#### Optimization recommendations
+
+1. **Collapse three LLM calls to one.** `triage` and `expand_query` each spend a
+   full `llama3.2:3b` round-trip. `triage` can be embeddings/rules-only — the
+   deterministic guard in `app/graph/nodes/triage.py` already overrides the model
+   for the money+calc and out-of-scope cases, so the model rarely decides
+   anything. `expand_query`'s LLM rewrite buys a modest recall gain over the
+   deterministic domain-hint map. Making both rules/embeddings-only removes
+   ~20–60 s/request in `ollama` mode and makes routing deterministic; keep the
+   LLM path behind a flag. *Highest impact on the real system.*
+2. **End-to-end response cache** keyed on normalised question + route, checked
+   before the graph runs. The current caches (`app/rag/cache.py`) stop at the RAG
+   subgraph — `synthesize` re-runs on every repeat. A full-response cache returns
+   a repeat question in ~1 ms instead of ~4 min.
+
+Secondary: `llama3.2:1b` roughly halves generation time (measured in the
+two-model pass); any GPU is a 10–50× step change — but both are out of scope for
+a "no-paid-API, runs-on-a-laptop" prototype.
 
 **Caching** (`app/rag/cache.py`, in-process, `CACHE_ENABLED=false` to disable):
 
@@ -259,10 +334,8 @@ Both keys carry an `index_fingerprint()` (retrieval config + live chunk count),
 so a re-ingest or a knob change invalidates them automatically. Hit/miss counts
 are on `/metrics` as `rag_cache_events_total`.
 
-Further optimizations not done here: an end-to-end response cache keyed on
-normalized question + route (skips synthesis too), and replacing the
-`grade_docs` step with a pure score threshold. Moving both caches to Redis is
-the step that lets multiple API workers share them (see concurrency below).
+Moving both caches to Redis is what lets multiple API workers share them (see
+concurrency below); the end-to-end response cache is recommendation #2 above.
 
 **Concurrency.** The API is one `uvicorn` process; FastAPI runs the sync
 `/chat` handler on its threadpool, so concurrent requests do run on separate
@@ -352,6 +425,24 @@ LLM_MODE=dummy streamlit run app/ui/streamlit_app.py   # separate shell
 fully-pinned transitive resolution used by the Dockerfile and `make install`
 (regenerate with `make lock`, needs [`uv`](https://docs.astral.sh/uv/)).
 
+### Configuration
+
+All settings are environment variables (pydantic-settings); the full list with
+defaults is in `.env.example`. The ones you'd usually touch:
+
+| Var | Default | Meaning |
+|-----|---------|---------|
+| `LLM_MODE` | `ollama` | `ollama` (real model) or `dummy` (deterministic, offline) |
+| `LLM_MODEL` | `llama3.2:3b` | any Ollama tag; `llama3.2:1b` for speed |
+| `OLLAMA_BASE_URL` | `http://ollama:11434` | Ollama endpoint |
+| `LLM_FALLBACK_DUMMY` | `true` | fall back to dummy if Ollama is unreachable instead of erroring |
+| `TAX_YEAR` | `2025` | calculator year + `tax_year` metadata filter on retrieval |
+| `SEARCH_K` | `5` | chunks kept for the prompt |
+| `RETRIEVAL_MODE` | `hybrid` | `hybrid` / `dense` / `bm25` |
+| `RERANK_ENABLED` | `true` | cross-encoder rerank on/off |
+| `CACHE_ENABLED` | `true` | in-process embedding + RAG-result LRUs |
+| `LOG_LEVEL` / `LOG_JSON` | `INFO` / `true` | structured logging verbosity / format |
+
 ### Observability (optional)
 
 The core stack (`make up` / `docker compose up`) is just `ollama`, `api`, `ui`.
@@ -412,6 +503,30 @@ LLM_MODE=dummy python -m loadtest.run_load --api-url http://localhost:8000 --n 1
 # concurrency mostly lengthens the warmup queue; --warmup drops the first N
 # cold-start requests from the latency stats.
 ```
+
+## Known limitations
+
+- **Calculator.** `total_tax` is tax *before* credits; the headline figure
+  (`tax_after_credits`) subtracts only a non-refundable Child Tax Credit. The
+  income input is treated as **gross** — the tool subtracts the standard
+  deduction itself — so stating a *taxable* figure over-deducts. No itemised
+  deductions, no other credits, no state tax; tax years 2024–2025 only; every
+  dependent is assumed a CTC-eligible qualifying child under 17.
+- **Retrieval.** Finds the right *publication* reliably (100% hit rate in the
+  functional eval) but page-level precision is ~0.31 — weak on table-heavy pages
+  (standard-deduction table, rate schedules). See *Retrieval quality*.
+- **Routing** tracks the local model. `llama3.2:3b` misfiles some calc questions;
+  the deterministic guard in `triage` backstops the common cases and `needs_calc`
+  is folded into `rag_plus_calc` by design.
+- **Concurrency.** Retrieval is serialised by a process-wide lock (native
+  thread-safety) — one retrieval at a time. No request cancellation: `/chat`
+  runs to completion regardless of the client.
+- **Safety.** No input moderation, prompt-injection / jailbreak screening, rate
+  limiting, or abuse policy — production would add a pre/post model (see
+  *Architecture*). The output guardrails (SSN redaction, citation + numeric
+  grounding) are deterministic and deliberately conservative.
+- **Not tax advice** — every answer carries that disclaimer; this is an
+  information-retrieval prototype, not a filing tool.
 
 ## Further extensions
 

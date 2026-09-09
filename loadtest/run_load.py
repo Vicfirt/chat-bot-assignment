@@ -101,22 +101,26 @@ def write_report(result: dict, out_md: str = "docs/loadtest-results.md",
         "", "## Per-node mean (ms)", "",
         *[f"- {k}: {v}" for k, v in sorted(per_node.items(), key=lambda x: -x[1])],
         "", "## Bottleneck", "",
-        f"`{bottleneck}` is the dominant per-request cost (mean {per_node.get(bottleneck, 0)} ms). "
-        "In `dummy` mode this is vector search over the embedded Chroma index; in `ollama` "
-        "mode LLM generation in `synthesize` typically dominates instead.",
+        f"This run (`LLM_MODE=dummy`): `{bottleneck}` is the dominant node "
+        f"(mean {per_node.get(bottleneck, 0)} ms) — dense + BM25 + cross-encoder "
+        "rerank over the embedded Chroma index, lock-serialised. Every other node "
+        "is ~0 ms because the LLM is stubbed. This isolates the retrieval path.",
+        "",
+        "Deployed system (`LLM_MODE=ollama`): the bottleneck is **`synthesize` — "
+        "LLM generation — by two orders of magnitude.** Each request makes three "
+        "`llama3.2:3b` CPU calls: `triage` (~10-30 s), `expand_query` (~10-30 s), "
+        "`synthesize` (~3-4 min). Retrieval and the rest are < 1 s combined.",
         "", "## Optimization recommendations", "",
-        "1. **End-to-end response cache** keyed on normalised question + route, "
-        "returning the stored answer before the graph runs. The current caches "
-        "(`app/rag/cache.py`) stop at the RAG subgraph; synthesis, guardrails and "
-        "validate still execute on a repeat. A full-response cache takes a repeat "
-        "query to ~1 ms and, in `ollama` mode, removes the dominant ~3-4 min "
-        "`synthesize` cost entirely on the hit path.",
-        "2. **Skip the `validate` retry** when the draft already carries the "
-        "expected citations and the calc total. The retry re-runs "
-        "retrieve -> calculate -> synthesize -> guardrails — a second full LLM "
-        "round-trip — and rarely changes a draft that already passed the cheap "
-        "checks. Gating it on \"cheap checks already green\" removes that tail for "
-        "the common case.",
+        "1. **Collapse three LLM calls to one.** `triage` and `expand_query` each "
+        "cost a full `llama3.2:3b` round-trip. `triage` can be embeddings/rules-"
+        "only (the deterministic guard already overrides the model for the common "
+        "cases); `expand_query`'s LLM rewrite buys little over the domain-hint "
+        "map. Rules-only for both removes ~20-60 s/request in `ollama` mode. "
+        "Highest impact on the real system.",
+        "2. **End-to-end response cache** keyed on normalised question + route, "
+        "checked before the graph runs. The current caches (`app/rag/cache.py`) "
+        "stop at the RAG subgraph, so `synthesize` re-runs on every repeat; a "
+        "full-response cache returns a repeat query in ~1 ms instead of ~4 min.",
         "", "## Note on the tail", "",
         "- Retrieval is serialised by one process-wide lock (see README "
         "\"concurrency\"), so at concurrency > 1 the first requests queue behind the "

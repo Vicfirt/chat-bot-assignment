@@ -36,7 +36,6 @@ services:
   api:
     build:
       context: .
-      network: host
     image: agentic-rag-tax-chatbot:latest
     environment:
       LLM_MODE: ${LLM_MODE:-ollama}
@@ -57,7 +56,6 @@ services:
   ui:
     build:
       context: .
-      network: host
     image: agentic-rag-tax-chatbot:latest
     command: streamlit run app/ui/streamlit_app.py --server.port 8501 --server.address 0.0.0.0
     environment:
@@ -72,7 +70,6 @@ services:
   ingest:
     build:
       context: .
-      network: host
     image: agentic-rag-tax-chatbot:latest
     profiles: ["ingest"]
     command: python -m app.ingest.build_index

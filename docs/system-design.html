@@ -1,0 +1,671 @@
+<title>Agentic RAG Tax Chatbot</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+  :root {
+    --ground: #f4f5f3;
+    --surface: #fbfcfa;
+    --sunk: #eceeea;
+    --ink: #1b2129;
+    --ink-soft: #55606b;
+    --ink-faint: #8b95a0;
+    --line: #d4d8d1;
+    --line-strong: #b8bdb4;
+    --accent: #2e6a6f;          /* institutional teal — control spine + LLM nodes */
+    --accent-wash: #e3ecec;
+    --calc: #9a6329;            /* ochre — deterministic, no-LLM nodes */
+    --calc-wash: #f0e6d6;
+    --alert: #a83a30;           /* retry / guardrail-violation edge */
+    --alert-wash: #f2ddd9;
+    --shadow: 0 1px 2px rgba(27, 33, 41, .06), 0 6px 16px rgba(27, 33, 41, .05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #10141a;
+      --surface: #171d25;
+      --sunk: #12171e;
+      --ink: #e7e9e5;
+      --ink-soft: #a2acb5;
+      --ink-faint: #6b7681;
+      --line: #2b333d;
+      --line-strong: #3b444f;
+      --accent: #63aeb2;
+      --accent-wash: #1b2f31;
+      --calc: #d09a5b;
+      --calc-wash: #2e2617;
+      --alert: #d8695f;
+      --alert-wash: #33201d;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 22px rgba(0, 0, 0, .32);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #10141a;
+    --surface: #171d25;
+    --sunk: #12171e;
+    --ink: #e7e9e5;
+    --ink-soft: #a2acb5;
+    --ink-faint: #6b7681;
+    --line: #2b333d;
+    --line-strong: #3b444f;
+    --accent: #63aeb2;
+    --accent-wash: #1b2f31;
+    --calc: #d09a5b;
+    --calc-wash: #2e2617;
+    --alert: #d8695f;
+    --alert-wash: #33201d;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 22px rgba(0, 0, 0, .32);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 56px 32px 80px;
+  }
+
+  /* ---- header ---- */
+  header { margin-bottom: 40px; }
+  .kicker {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11.5px;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 12px;
+  }
+  h1 {
+    font-size: clamp(28px, 4vw, 40px);
+    font-weight: 600;
+    letter-spacing: -.02em;
+    text-wrap: balance;
+    margin: 0 0 10px;
+  }
+  .lede {
+    max-width: 62ch;
+    color: var(--ink-soft);
+    font-size: 15.5px;
+    margin: 0 0 20px;
+  }
+  .stack {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .chip {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    padding: 4px 10px;
+    border: 1px solid var(--line-strong);
+    border-radius: 999px;
+    color: var(--ink-soft);
+    background: var(--surface);
+  }
+
+  /* ---- legend ---- */
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px 26px;
+    padding: 16px 20px;
+    margin-bottom: 44px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+  }
+  .legend div {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 13px;
+    color: var(--ink-soft);
+  }
+  .swatch {
+    width: 26px; height: 16px;
+    border-radius: 4px;
+    flex: none;
+    border: 1px solid var(--line-strong);
+  }
+  .sw-llm { background: var(--accent-wash); border-color: var(--accent); }
+  .sw-det { background: var(--calc-wash); border-color: var(--calc); }
+  .sw-store { background: var(--sunk); border-style: dashed; }
+  .sw-io { background: var(--ink); border-color: var(--ink); }
+  .edge-key {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    color: var(--ink-faint);
+  }
+
+  /* ---- sections ---- */
+  section { margin-bottom: 40px; }
+  .sec-head {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11.5px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0 0 4px;
+  }
+  .sec-note {
+    font-size: 13px;
+    color: var(--ink-soft);
+    margin: 0 0 18px;
+    max-width: 66ch;
+  }
+
+  /* ---- nodes ---- */
+  .flow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+  }
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 14px;
+  }
+  .node {
+    background: var(--surface);
+    border: 1px solid var(--line-strong);
+    border-left: 3px solid var(--ink-faint);
+    border-radius: 8px;
+    padding: 11px 15px;
+    min-width: 150px;
+    box-shadow: var(--shadow);
+  }
+  .node .name {
+    font-family: "IBM Plex Mono", monospace;
+    font-weight: 600;
+    font-size: 14px;
+  }
+  .node .role {
+    font-size: 12px;
+    color: var(--ink-soft);
+    margin-top: 2px;
+  }
+  .node.llm { border-left-color: var(--accent); }
+  .node.llm .name { color: var(--accent); }
+  .node.det { border-left-color: var(--calc); }
+  .node.det .name { color: var(--calc); }
+  .node.io {
+    background: var(--ink);
+    color: var(--ground);
+    border-color: var(--ink);
+    border-left-color: var(--ink);
+  }
+  .node.io .role { color: color-mix(in srgb, var(--ground) 72%, transparent); }
+  .node.store {
+    background: var(--sunk);
+    border-style: dashed;
+    border-left-style: solid;
+    box-shadow: none;
+  }
+
+  .conn {
+    width: 2px;
+    height: 22px;
+    background: var(--line-strong);
+    position: relative;
+  }
+  .conn::after {
+    content: "";
+    position: absolute;
+    left: 50%; bottom: -1px;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: var(--line-strong);
+  }
+  .conn.lbl::before {
+    content: attr(data-l);
+    position: absolute;
+    left: 12px; top: 50%;
+    transform: translateY(-50%);
+    white-space: nowrap;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    color: var(--ink-faint);
+  }
+
+  /* branch block */
+  .branch {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    width: 100%;
+    margin-top: 8px;
+  }
+  .lane {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    padding: 12px 8px;
+    border: 1px dashed var(--line);
+    border-radius: 10px;
+    background: var(--surface);
+  }
+  .lane .route {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11.5px;
+    color: var(--accent);
+    margin-bottom: 10px;
+    font-weight: 500;
+  }
+  .lane .node { min-width: 0; width: 100%; }
+  .lane .conn { height: 16px; }
+  .par {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    color: var(--calc);
+    margin: 6px 0;
+    letter-spacing: .04em;
+  }
+  .lane .pair {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .merge-note {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    color: var(--ink-faint);
+    margin: 14px 0 6px;
+  }
+
+  /* retry callout */
+  .retry {
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+    padding: 9px 14px;
+    border: 1px solid var(--alert);
+    background: var(--alert-wash);
+    border-radius: 8px;
+    font-size: 12.5px;
+    color: var(--ink);
+  }
+  .retry b {
+    font-family: "IBM Plex Mono", monospace;
+    color: var(--alert);
+    font-weight: 600;
+  }
+
+  /* subgraph panel */
+  .panel {
+    border: 1.5px solid var(--accent);
+    border-radius: 12px;
+    padding: 22px 20px 24px;
+    background: color-mix(in srgb, var(--accent-wash) 40%, var(--surface));
+  }
+  .panel .tag {
+    display: inline-block;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 999px;
+    padding: 3px 10px;
+    margin-bottom: 16px;
+  }
+  .chain {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .chain .node { flex: 1 1 150px; }
+  .chain .ar {
+    align-self: center;
+    color: var(--line-strong);
+    font-size: 18px;
+    flex: none;
+  }
+  .loopback {
+    margin-top: 12px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11.5px;
+    color: var(--ink-faint);
+  }
+  .loopback b { color: var(--accent); font-weight: 600; }
+
+  /* two-up grids */
+  .grid2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 18px 18px 16px;
+  }
+  .card h3 {
+    font-size: 13px;
+    font-family: "IBM Plex Mono", monospace;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0 0 12px;
+  }
+  .card ul { margin: 0; padding: 0; list-style: none; }
+  .card li {
+    display: flex;
+    gap: 10px;
+    padding: 6px 0;
+    font-size: 13px;
+    border-top: 1px solid var(--line);
+  }
+  .card li:first-child { border-top: 0; }
+  .card li .k {
+    font-family: "IBM Plex Mono", monospace;
+    color: var(--ink);
+    flex: none;
+    min-width: 116px;
+    font-weight: 500;
+  }
+  .card li .v { color: var(--ink-soft); }
+
+  .pipe {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+  }
+  .pipe .step {
+    font-family: "IBM Plex Mono", monospace;
+    background: var(--sunk);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 6px 10px;
+    color: var(--ink);
+  }
+  .pipe .ar { color: var(--ink-faint); }
+
+  /* metrics footer */
+  .metrics {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-top: 8px;
+  }
+  .metrics div {
+    background: var(--surface);
+    padding: 16px 16px 14px;
+  }
+  .metrics .num {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: -.01em;
+    font-variant-numeric: tabular-nums;
+  }
+  .metrics .cap {
+    font-size: 11.5px;
+    color: var(--ink-soft);
+    margin-top: 3px;
+  }
+
+  footer {
+    margin-top: 48px;
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+    font-size: 12px;
+    color: var(--ink-faint);
+    font-family: "IBM Plex Mono", monospace;
+  }
+
+  @media (max-width: 720px) {
+    .wrap { padding: 40px 20px 64px; }
+    .branch { grid-template-columns: 1fr 1fr; }
+    .grid2 { grid-template-columns: 1fr; }
+    .metrics { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+
+<div class="wrap">
+  <header>
+    <p class="kicker">System Design</p>
+    <h1>Agentic RAG Tax Chatbot</h1>
+    <p class="lede">
+      A LangGraph agent that answers U.S. federal individual income-tax questions grounded in
+      IRS Publications&nbsp;17, 501 and 505, and computes tax with a deterministic calculator —
+      never the model. One FastAPI process hosts the graph and an embedded vector store; the
+      only external service is a local LLM.
+    </p>
+    <div class="stack">
+      <span class="chip">LangGraph</span>
+      <span class="chip">FastAPI · SSE</span>
+      <span class="chip">Streamlit</span>
+      <span class="chip">Chroma + BM25</span>
+      <span class="chip">Ollama · llama3.2:1b</span>
+      <span class="chip">no paid APIs</span>
+    </div>
+  </header>
+
+  <div class="legend">
+    <div><span class="swatch sw-io"></span> service / boundary</div>
+    <div><span class="swatch sw-llm"></span> LLM call</div>
+    <div><span class="swatch sw-det"></span> deterministic — no LLM</div>
+    <div><span class="swatch sw-store"></span> store / index</div>
+    <div class="edge-key">──▶ flow&nbsp;&nbsp;&nbsp;‖ parallel&nbsp;&nbsp;&nbsp;<span style="color:var(--alert)">↺ retry ≤1×</span></div>
+  </div>
+
+  <!-- REQUEST PATH -->
+  <section>
+    <p class="sec-head">Request path</p>
+    <p class="sec-note">
+      The UI streams server-sent events so every node's completion shows live. A repeated
+      question is answered from an end-to-end response cache before the graph runs at all.
+    </p>
+    <div class="flow">
+      <div class="row">
+        <div class="node io"><div class="name">Streamlit UI</div><div class="role">live step trace · retrieval funnel · citations</div></div>
+      </div>
+      <div class="conn lbl" data-l="POST /chat/stream — SSE"></div>
+      <div class="row">
+        <div class="node io"><div class="name">FastAPI</div><div class="role">app/api/main.py · /chat · /chat/stream · /health · /metrics</div></div>
+      </div>
+      <div class="conn lbl" data-l="response cache — hit ≈ 1 ms, miss ↓"></div>
+      <div class="row">
+        <div class="node"><div class="name">main LangGraph</div><div class="role">7 nodes · recursion-limited · explicit AgentState</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- MAIN GRAPH -->
+  <section>
+    <p class="sec-head">Main graph — autonomous routing &amp; decomposition</p>
+    <p class="sec-note">
+      <code>triage</code> classifies each question (LLM label + a deterministic guard) into one of
+      four routes. On <code>rag_plus_calc</code>, <code>plan</code> fans out into two independent
+      subtasks that run concurrently and rejoin at <code>synthesize</code>.
+    </p>
+    <div class="flow">
+      <div class="row">
+        <div class="node llm"><div class="name">triage</div><div class="role">→ rag_only · needs_calc · rag_plus_calc · out_of_scope</div></div>
+      </div>
+      <div class="conn"></div>
+
+      <div class="branch">
+        <div class="lane">
+          <div class="route">out_of_scope</div>
+          <div class="node det"><div class="name">synthesize</div><div class="role">canned refusal</div></div>
+        </div>
+        <div class="lane">
+          <div class="route">rag_only</div>
+          <div class="node"><div class="name">retrieve</div><div class="role">RAG subgraph</div></div>
+        </div>
+        <div class="lane">
+          <div class="route">needs_calc</div>
+          <div class="node"><div class="name">plan</div><div class="role">extract tax_profile</div></div>
+          <div class="conn"></div>
+          <div class="node det"><div class="name">calculate</div><div class="role">estimate_tax()</div></div>
+        </div>
+        <div class="lane">
+          <div class="route">rag_plus_calc</div>
+          <div class="node"><div class="name">plan</div><div class="role">extract tax_profile</div></div>
+          <div class="par">‖ fan-out — concurrent</div>
+          <div class="pair">
+            <div class="node"><div class="name">retrieve</div><div class="role">RAG subgraph</div></div>
+            <div class="node det"><div class="name">calculate</div><div class="role">estimate_tax()</div></div>
+          </div>
+        </div>
+      </div>
+
+      <p class="merge-note">▼ all routes converge — fan-in barrier at synthesize</p>
+
+      <div class="row">
+        <div class="node llm"><div class="name">synthesize</div><div class="role">cited answer from context + calc; figure line is deterministic</div></div>
+      </div>
+      <div class="conn"></div>
+      <div class="row">
+        <div class="node det"><div class="name">guardrails</div><div class="role">redact SSNs · flag unretrieved citations · flag ungrounded amounts</div></div>
+      </div>
+      <div class="conn"></div>
+      <div class="row">
+        <div class="node det"><div class="name">validate</div><div class="role">citations · numeric consistency · guardrail findings</div></div>
+      </div>
+      <div class="retry">
+        <span>↺</span>
+        <span><b>validate fails</b> → one retry back to <b>retrieve</b> (calc result persists); then ends regardless, marked <b>low&nbsp;confidence</b>.</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- RAG SUBGRAPH -->
+  <section>
+    <p class="sec-head">Modular RAG subgraph</p>
+    <p class="sec-note">
+      A separate compiled graph, invoked from <code>retrieve</code> as tool&nbsp;#1 — not counted
+      in the 7-node budget. Hybrid retrieval, then a cross-encoder rerank that survives its own
+      score floor for amount queries.
+    </p>
+    <div class="panel">
+      <span class="tag">app/rag/subgraph.py · 5 nodes</span>
+      <div class="chain">
+        <div class="node llm"><div class="name">expand_query</div><div class="role">history-condense + LLM rewrite + tax_profile &amp; domain-hint queries</div></div>
+        <span class="ar">▶</span>
+        <div class="node det"><div class="name">retrieve_candidates</div><div class="role">dense (Chroma) + BM25 → RRF fusion, k=60</div></div>
+        <span class="ar">▶</span>
+        <div class="node det"><div class="name">rerank</div><div class="role">ms-marco cross-encoder + table-first boost</div></div>
+        <span class="ar">▶</span>
+        <div class="node det"><div class="name">grade_docs</div><div class="role">score floor · min-docs</div></div>
+        <span class="ar">▶</span>
+        <div class="node det"><div class="name">assemble_context</div><div class="role">token budget · citations w/ pub + page</div></div>
+      </div>
+      <p class="loopback">↺ <b>grade_docs</b> → <b>expand_query</b> — broaden &amp; retry, ≤ 2 rounds</p>
+    </div>
+  </section>
+
+  <!-- TOOLS -->
+  <section>
+    <p class="sec-head">Tools</p>
+    <div class="grid2">
+      <div class="card">
+        <h3>#1 · retrieval</h3>
+        <ul>
+          <li><span class="k">retriever_tool</span><span class="v">wraps the RAG subgraph as one call</span></li>
+          <li><span class="k">returns</span><span class="v">rag_context, citations, candidates→reranked→kept funnel</span></li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>#2 · non-retrieval, deterministic</h3>
+        <ul>
+          <li><span class="k">estimate_tax()</span><span class="v">brackets + standard deduction, tax years 2024–25</span></li>
+          <li><span class="k">+ CTC</span><span class="v">$2,000 / $2,200 per child, §24 phase-out</span></li>
+          <li><span class="k">no LLM</span><span class="v">exact, unit-tested; the model never does arithmetic</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- DATA & MODELS -->
+  <section>
+    <p class="sec-head">Data &amp; models</p>
+    <div class="grid2">
+      <div class="card">
+        <h3>Ingestion — one-time, offline after</h3>
+        <div class="pipe">
+          <span class="step">Pub. 17 · 501 · 505</span><span class="ar">▶</span>
+          <span class="step">download · SHA-256 pinned</span><span class="ar">▶</span>
+          <span class="step">parse_chunk · structure-aware</span><span class="ar">▶</span>
+          <span class="step">~1,550 chunks</span>
+        </div>
+        <ul style="margin-top:14px">
+          <li><span class="k">chunking</span><span class="v">split on headings; tables &amp; worked examples kept atomic</span></li>
+          <li><span class="k">metadata</span><span class="v">pub · section · page · block_type · tax_year</span></li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Stores &amp; models</h3>
+        <ul>
+          <li><span class="k">Chroma</span><span class="v">cosine · bge-small-en-v1.5 · 384-d</span></li>
+          <li><span class="k">BM25</span><span class="v">rank_bm25 · in-process keyword index</span></li>
+          <li><span class="k">rerank</span><span class="v">cross-encoder/ms-marco-MiniLM-L-6-v2</span></li>
+          <li><span class="k">generate</span><span class="v">llama3.2:1b via Ollama · or deterministic dummy</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- CROSS-CUTTING -->
+  <section>
+    <p class="sec-head">Cross-cutting</p>
+    <div class="grid2">
+      <div class="card">
+        <h3>Caching — 3 in-process LRUs</h3>
+        <ul>
+          <li><span class="k">embedding</span><span class="v">skip re-encoding a seen query string</span></li>
+          <li><span class="k">RAG result</span><span class="v">skip the whole subgraph for a seen question</span></li>
+          <li><span class="k">response</span><span class="v">skip the whole graph — synthesize included</span></li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Observability — compose profile</h3>
+        <ul>
+          <li><span class="k">logs</span><span class="v">one JSON line per stage, shared request_id → Loki</span></li>
+          <li><span class="k">metrics</span><span class="v">/metrics → Prometheus → Grafana dashboard</span></li>
+          <li><span class="k">eval push</span><span class="v">run_eval → Pushgateway gauges</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- METRICS -->
+  <section>
+    <p class="sec-head">Measured — llama3.2:1b, committed run</p>
+    <div class="metrics">
+      <div><div class="num">100%</div><div class="cap">route / numeric / citation accuracy (n=15)</div></div>
+      <div><div class="num">0.79</div><div class="cap">retrieval recall@5 (0.61 → 0.79 after calc-aware fixes)</div></div>
+      <div><div class="num">~1 ms</div><div class="cap">repeat /chat — response cache hit vs. ~50 s cold</div></div>
+      <div><div class="num">106</div><div class="cap">tests · ruff-clean · CI on push</div></div>
+    </div>
+  </section>
+
+  <footer>
+    Streamlit UI → FastAPI (LangGraph + embedded Chroma) → Ollama &nbsp;·&nbsp; observability is a
+    separate compose profile &nbsp;·&nbsp; LLM_MODE=dummy runs the whole system offline &amp; deterministic
+  </footer>
+</div>

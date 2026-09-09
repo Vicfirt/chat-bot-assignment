@@ -92,6 +92,10 @@ flowchart LR
     API -.->|"/metrics · JSON logs"| OBS["Prometheus · Grafana · Loki<br/>(compose profile)"]
 ```
 
+A fuller, styled version of this schema — every node, the RAG subgraph, the data
+pipeline, and the measured numbers — is a standalone page at
+[`docs/system-design.html`](docs/system-design.html) (open in a browser).
+
 The UI calls `POST /chat/stream` (server-sent events): each **main-graph** node
 emits its `record_step` as it finishes, and the UI appends it to a live
 `st.status` panel — so a multi-minute CPU run shows

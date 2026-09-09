@@ -21,7 +21,7 @@ async def test_run_load_against_mock(monkeypatch):
     import loadtest.run_load as rl
 
     monkeypatch.setattr(rl, "_client_factory",
-                        lambda: httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+                        lambda *a, **k: httpx.AsyncClient(transport=httpx.MockTransport(handler)))
     result = await run_load("http://api:8000", n=12, concurrency=3)
     assert result["n"] == 12
     assert result["errors"] == 0

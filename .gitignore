@@ -7,7 +7,7 @@ data/raw_pdfs/
 data/chroma/
 .pytest_cache/
 *.egg-info/
-docs/loadtest-latency.png
+docs/loadtest-latency*.png
 .DS_Store
 
 # Local planning artifacts — kept on disk, never published

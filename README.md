@@ -333,60 +333,65 @@ cross-encoder has little left to reorder, and on amount queries the table-boost
 bypasses its scoring entirely. Residual misses (q04, q12) land one page off the
 label — see [Further extensions](#further-extensions).
 
-### Load test — [`docs/loadtest-results.md`](docs/loadtest-results.md)
+### Load test
 
-100 requests, `LLM_MODE=dummy`, **concurrency 4**, 0 errors, first 5 discarded as
-warm-up.
+Two runs — one isolates the retrieval path, one profiles the real model:
 
-| p50 | p90 | p95 | p99 | mean | max | throughput |
-|-----|-----|-----|-----|------|-----|------------|
-| 19 ms | 656 ms | 1066 ms | 10450 ms | 528 ms | 10562 ms | 7.6 req/s |
+**Retrieval path** — [`docs/loadtest-results.md`](docs/loadtest-results.md),
+`LLM_MODE=dummy CACHE_ENABLED=false`, 100 requests, concurrency 4, 0 errors,
+first 5 discarded:
 
-> These numbers predate the `--warmup` flag and the two-model (`1b` + `3b`) pass;
-> they are regenerated in that pass. The bottleneck analysis below does not
-> depend on the exact figures.
+| p50 | p90 | p99 | mean | max | throughput |
+|-----|-----|-----|------|-----|------------|
+| ~1.0 s | ~1.3 s | ~1.6 s | ~0.75 s | ~1.7 s | ~4–5 req/s |
 
-Steady-state p50 is ~19 ms; the p99/max tail is the first few requests all
-queuing behind the one-time model + HNSW warmup, since retrieval is serialised
-by a single lock (below). A latency histogram is written to
-`docs/loadtest-latency.png` locally (gitignored).
+`retrieve` is the only non-zero node (~1.07 s mean). The latencies are bimodal —
+a few ms when the retrieval lock is free, ~1 s when queued behind another
+retrieval — which is the process-wide lock (see *Concurrency*) doing its job at
+concurrency 4. (~1.07 s vs. ~0.7 s pre-fix is the cost of the wider 40-candidate
+fusion pool.)
+
+**Real model** —
+[`docs/loadtest-results-ollama-1b.md`](docs/loadtest-results-ollama-1b.md),
+`LLM_MODE=ollama` / `llama3.2:1b`, concurrency 1 (one CPU model can't overlap),
+8 requests, 0 errors:
+
+| Node | mean | share |
+|------|------|-------|
+| `synthesize` (answer generation) | **~24 s** | ~70% |
+| `retrieve` (incl. the subgraph's `expand_query` LLM call, cold) | ~7 s | ~20% |
+| `triage` (LLM classification) | ~3 s | ~9% |
+| `plan` / `calculate` / `guardrails` / `validate` | ~0 ms | — |
+
+p50 ~32 s/request. (At concurrency > 1 the per-node numbers inflate — every LLM
+call queues behind other requests' `synthesize` on the one CPU model — so the
+profile is run serially.)
 
 #### Main bottleneck
 
-The dominant cost depends entirely on the LLM mode:
-
-- **`LLM_MODE=ollama` (real answers) — `synthesize`, i.e. LLM generation, by two
-  orders of magnitude.** Each `/chat` makes three `llama3.2:3b` calls on CPU:
-  `triage` classification (~10–30 s), `expand_query` rewrite (~10–30 s), and the
-  `synthesize` answer (~400 tokens, **~3–4 min**). Retrieval, the calculator, and
-  the guardrail/validate logic together are < 1 s. This is the deployed system's
-  bottleneck; the functional-eval wall-clock (~4–6 min/question) is almost
-  entirely these three calls. Exact per-node numbers land with the two-model
-  pass.
-- **`LLM_MODE=dummy` (the committed load test) — `retrieve`.** With the LLM
-  stubbed to a no-op, the load test isolates everything else: `retrieve` is
-  ~695 ms mean (dense + BM25 + cross-encoder rerank, lock-serialised) and every
-  other node is ~0 ms. This is the *retrieval-path* profile, not the deployed
-  system — useful for tuning retrieval without the LLM as a confound.
+**`synthesize` — LLM answer generation — is ~70–90% of every real request.** The
+two secondary costs are also LLM calls: `triage` classification and the RAG
+subgraph's `expand_query` rewrite. The deterministic nodes are ~0 ms. In `dummy`
+mode `synthesize` collapses to nothing and `retrieve` (vector search + rerank,
+lock-serialised) is all that's left.
 
 #### Optimization recommendations
 
-1. **Collapse three LLM calls to one.** `triage` and `expand_query` each spend a
-   full `llama3.2:3b` round-trip. `triage` can be embeddings/rules-only — the
-   deterministic guard in `app/graph/nodes/triage.py` already overrides the model
-   for the money+calc and out-of-scope cases, so the model rarely decides
-   anything. `expand_query`'s LLM rewrite buys a modest recall gain over the
-   deterministic domain-hint map. Making both rules/embeddings-only removes
-   ~20–60 s/request in `ollama` mode and makes routing deterministic; keep the
-   LLM path behind a flag. *Highest impact on the real system.*
-2. **End-to-end response cache** keyed on normalised question + route, checked
-   before the graph runs. The current caches (`app/rag/cache.py`) stop at the RAG
-   subgraph — `synthesize` re-runs on every repeat. A full-response cache returns
-   a repeat question in ~1 ms instead of ~4 min.
+1. **Attack `synthesize`** — it is the request. Two independent levers:
+   *(a) end-to-end response cache* keyed on normalised question + route, checked
+   before the graph — a repeat returns in ~1 ms instead of ~24 s; the current
+   caches (`app/rag/cache.py`) stop at the RAG subgraph, so synthesis still
+   re-runs. *(b) token streaming* from `synthesize` — the `/chat/stream` SSE
+   plumbing already exists for step events; extending it to model tokens takes
+   time-to-first-token to ~1–2 s while the full answer still takes ~24 s.
+2. **Collapse the classification calls** — `triage` + `expand_query` are ~20–25%
+   of a serial request and can be embeddings/rules-only (the `triage` guard
+   already overrides the model for the common cases; `expand_query`'s rewrite
+   buys little over the domain-hint + `tax_profile` queries). Bonus: routing
+   becomes deterministic. Keep the LLM path behind a flag.
 
-Secondary: `llama3.2:1b` roughly halves generation time (measured in the
-two-model pass); any GPU is a 10–50× step change — but both are out of scope for
-a "no-paid-API, runs-on-a-laptop" prototype.
+Beyond the app: a smaller model, a GPU, or a batching server (vLLM / TGI) — all
+out of scope for a no-paid-API laptop prototype, and covered under *Concurrency*.
 
 **Caching** (`app/rag/cache.py`, in-process, `CACHE_ENABLED=false` to disable):
 
@@ -562,11 +567,17 @@ Explore → Loki:
 
 ```bash
 make test                                              # LLM_MODE=dummy python -m pytest -q
-LLM_MODE=dummy python -m eval.run_eval                  # writes docs/eval-results.md
-LLM_MODE=dummy python -m loadtest.run_load --api-url http://localhost:8000 --n 100 --concurrency 4 --warmup 5
-# API must be running. Retrieval is lock-serialised (see "Concurrency"), so higher
-# concurrency mostly lengthens the warmup queue; --warmup drops the first N
-# cold-start requests from the latency stats.
+
+# functional + retrieval eval (any LLM_MODE; ollama for real route/answer quality)
+LLM_MODE=ollama LLM_MODEL=llama3.2:1b OLLAMA_BASE_URL=http://localhost:11434 \
+  python -m eval.run_eval                               # writes docs/eval-results.{md,json}
+
+# load test — needs the API running in the matching mode
+CACHE_ENABLED=false LLM_MODE=dummy python -m loadtest.run_load \
+  --n 100 --concurrency 4 --warmup 5                    # retrieval-path profile
+LLM_MODE=ollama LLM_MODEL=llama3.2:1b python -m loadtest.run_load \
+  --n 8 --concurrency 1 --warmup 2 --timeout 400 \
+  --out-md docs/loadtest-results-ollama-1b.md           # real-model per-node profile
 ```
 
 ## Known limitations

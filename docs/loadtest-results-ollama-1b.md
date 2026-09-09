@@ -1,27 +1,27 @@
 # Load Test Results
 
-- Mode: `LLM_MODE=dummy`  |  Requests: 100  |  Concurrency: 4  |  Errors: 0  |  Warmup discarded: 5
-- Throughput: 5.15 req/s
+- Mode: `LLM_MODE=ollama`  |  Requests: 8  |  Concurrency: 1  |  Errors: 0  |  Warmup discarded: 2
+- Throughput: 0.03 req/s
 
-## Latency (ms) — first 5 requests excluded
+## Latency (ms) — first 2 requests excluded
 
 | p50 | p90 | p95 | p99 | mean | max |
 |-----|-----|-----|-----|------|-----|
-| 995.9 | 1269.9 | 1336.3 | 1657.1 | 751.7 | 1661.7 |
+| 32194.9 | 40907.2 | 43938.7 | 46363.8 | 34306.9 | 46970.1 |
 
 ## Per-node mean (ms)
 
-- retrieve: 1072.1
-- triage: 0.0
-- plan: 0.0
-- calculate: 0.0
-- synthesize: 0.0
-- guardrails: 0.0
+- synthesize: 23809.6
+- retrieve: 7429.8
+- triage: 3059.2
+- plan: 0.6
+- guardrails: 0.1
 - validate: 0.0
+- calculate: 0.0
 
 ## Bottleneck
 
-`retrieve` dominates at 1072 ms mean; every other node is ~0 ms.
+`synthesize` dominates at 23810 ms mean, then `retrieve` 7430 ms, `triage` 3059 ms.
 
 In `LLM_MODE=ollama` `synthesize` (the ~400-token cited answer, generated on CPU) is the whole request — ~90% of wall-clock even on `llama3.2:1b`. `triage` and `expand_query` (the RAG subgraph's own LLM call, counted under `retrieve`) are a few seconds each *when run serially*; under concurrency > 1 their measured time inflates because each call queues behind other requests' `synthesize` on the single CPU model. The deterministic nodes (`plan`, `calculate`, `guardrails`, `validate`) are ~0 ms. In `LLM_MODE=dummy` the LLM nodes collapse to ~0 ms and `retrieve` (vector search + rerank, lock-serialised) is all that is left — that run isolates the retrieval path.
 

@@ -217,6 +217,35 @@ metadata — `build_index` fails loudly if the count comes out far below that.
 - **Deterministic calculator, never LLM arithmetic** — tax math must be exact
   and testable.
 
+### Libraries vs. hand-rolled
+
+The retrieval stack is library-backed; only the orchestration glue is local.
+
+| Concern | Library |
+|---|---|
+| Vector store + metadata filter | ChromaDB |
+| Embeddings, cross-encoder rerank | `sentence-transformers` (`bge-small`, `ms-marco-MiniLM`) |
+| Keyword scoring | `rank_bm25` |
+| Graph runtime, subgraphs, retry loops | LangGraph |
+| PDF extraction | `pdfplumber` / `pypdf` |
+| API · UI · config · metrics | FastAPI · Streamlit · pydantic-settings · prometheus-client |
+
+Hand-rolled (~40 lines): RRF fusion, the dense + BM25 → fuse → rerank →
+table-boost sequence, and the structure-aware chunker. Kept explicit because the
+amount-query table boost, the `grade_min_score` handling, and the `tax_year`
+filter interplay are exactly what this project tunes — LangChain's
+`EnsembleRetriever` / `ContextualCompressionRetriever` do the same job but move
+that control into config, and RRF itself is ~10 lines in any library.
+
+Libraries that would fill a specific gap if the matching extension is taken:
+
+- **`ragas`** — faithfulness / answer-relevance / context-precision judges (the
+  LLM-judge eval listed as out of scope); needs a judge LLM.
+- **LlamaIndex** `SentenceWindowNodeParser` + `AutoMergingRetriever` — for
+  hierarchical / small-to-big retrieval, instead of a hand-rolled parent store.
+- **TEI** (`text-embeddings-inference`) — the embedding server for the
+  documented scale-out path, not a custom service.
+
 ### Repository layout
 
 ```

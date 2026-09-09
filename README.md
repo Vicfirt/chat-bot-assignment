@@ -25,6 +25,12 @@ full rationale and non-goals.
 Three core services: **Streamlit UI** -> **FastAPI** (hosts the LangGraph app +
 embedded Chroma) -> **Ollama** (local LLM; `LLM_MODE=dummy` bypasses it).
 
+The UI calls `POST /chat/stream` (server-sent events): each graph node emits its
+`record_step` as it finishes, and the UI appends it to a live `st.status`
+panel — so a multi-minute CPU run shows `triage ✓ → retrieve ✓ → rerank ✓ →
+synthesize…` instead of one opaque spinner. `POST /chat` (blocking JSON) is
+kept for programmatic use and the load test.
+
 ### Main graph (6 nodes)
 
 ```
@@ -195,6 +201,13 @@ reports connection errors). The load-test artifact is therefore captured at
 concurrency 1. Fixing this is the top reliability item: give each worker its own
 Chroma client / serialize retrieval, or run the model server (or a retrieval
 service) out of process and scale the API with multiple worker processes.
+
+**No request cancellation.** `/chat` runs the graph to completion regardless of
+the client; there is no abort path (it would need the async/multi-worker rework
+above, plus a cancellation flag checked between nodes or an aborted Ollama
+call). `/chat/stream` mitigates the *experience* — the Streamlit UI shows each
+node completing live via SSE instead of one opaque spinner — but the work still
+finishes server-side.
 
 ## Install and run
 

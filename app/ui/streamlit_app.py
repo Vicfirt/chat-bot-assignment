@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import httpx
 import streamlit as st
 
@@ -15,6 +17,23 @@ def call_api(question: str, history: list[dict], api_url: str,
                            json={"question": question, "chat_history": history})
         resp.raise_for_status()
         return resp.json()
+    finally:
+        if owns:
+            client.close()
+
+
+def stream_api(question: str, history: list[dict], api_url: str,
+               client: httpx.Client | None = None):
+    """Yield parsed SSE events from /chat/stream: {"type": "step"|"final"|"error", ...}."""
+    owns = client is None
+    client = client or httpx.Client(timeout=300)
+    try:
+        with client.stream("POST", f"{api_url}/chat/stream",
+                           json={"question": question, "chat_history": history}) as resp:
+            resp.raise_for_status()
+            for line in resp.iter_lines():
+                if line and line.startswith("data: "):
+                    yield json.loads(line[6:])
     finally:
         if owns:
             client.close()
@@ -57,19 +76,33 @@ def main() -> None:
     st.chat_message("user").write(prompt)
     st.session_state.history.append({"role": "user", "content": prompt})
 
-    with st.spinner("Running agent..."):
-        try:
-            data = call_api(prompt, st.session_state.history[:-1], settings.api_url)
-        except Exception as e:  # noqa: BLE001
-            st.error(f"API error: {e}")
-            return
+    steps: list[dict] = []
+    final: dict | None = None
+    live = st.status("Running agent...", expanded=True)
+    try:
+        for ev in stream_api(prompt, st.session_state.history[:-1], settings.api_url):
+            if ev["type"] == "step":
+                steps.append(ev)
+                live.write(f"✓ **{ev['node']}** ({ev['duration_ms']} ms) — {ev['summary']}")
+            elif ev["type"] == "final":
+                final = ev
+            elif ev["type"] == "error":
+                live.update(label="Agent error", state="error")
+                st.error(ev["message"])
+                return
+    except Exception as e:  # noqa: BLE001
+        live.update(label="API error", state="error")
+        st.error(f"API error: {e}")
+        return
+    live.update(label=f"Done in {(final or {}).get('total_ms', 0)} ms", state="complete")
 
-    answer = data["answer"]
+    data = final or {}
+    answer = data.get("answer", "")
     if data.get("low_confidence"):
         answer = "⚠️ Low confidence.\n\n" + answer
     st.chat_message("assistant").write(answer)
     st.session_state.history.append({"role": "assistant", "content": answer})
-    render_trace(data.get("steps", []), data.get("citations", []), data.get("route", "?"))
+    render_trace(steps, data.get("citations", []), data.get("route", "?"))
 
 
 try:

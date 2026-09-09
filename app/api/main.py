@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import json
 import logging
 import time
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.config import get_settings
-from app.graph.main_graph import run_agent
+from app.graph.main_graph import run_agent, run_agent_stream
 from app.observability.logging import configure_logging, log_event, new_request_id, set_request_id
 from app.observability.metrics import (
     RETRIEVAL_CHUNKS,
@@ -85,6 +87,59 @@ def chat(req: ChatRequest) -> ChatResponse:
         low_confidence=low_conf,
         guardrail=state.get("guardrail", {}),
     )
+
+
+def _sse(obj: dict) -> str:
+    return f"data: {json.dumps(obj)}\n\n"
+
+
+@app.post("/chat/stream")
+def chat_stream(req: ChatRequest) -> StreamingResponse:
+    """Server-sent events: one `{"type":"step", ...}` per graph node as it
+    finishes, then a final `{"type":"final", ...}` with the answer."""
+    start = time.perf_counter()
+    set_request_id(new_request_id())
+    history = [m.model_dump() for m in req.chat_history]
+    log_event("api", "request.received", question=req.question, history_len=len(history),
+              mode="stream")
+
+    def gen():
+        acc: dict = {}
+        try:
+            for chunk in run_agent_stream(req.question, history,
+                                          callbacks=get_langfuse_callbacks()):
+                for _node, delta in chunk.items():
+                    for s in delta.get("steps", []):
+                        record_steps([s])
+                        yield _sse({"type": "step", **s})
+                    acc.update({k: v for k, v in delta.items() if k != "steps"})
+        except Exception as e:  # noqa: BLE001
+            record_request("unknown", "error", time.perf_counter() - start)
+            log_event("api", "request.failed", error=str(e), level=logging.ERROR, mode="stream")
+            yield _sse({"type": "error", "message": str(e)})
+            return
+
+        total_ms = round((time.perf_counter() - start) * 1000, 1)
+        route = acc.get("route", "unknown")
+        citations = acc.get("citations", []) or []
+        low_conf = bool(acc.get("validation", {}).get("low_confidence", False))
+        record_request(route, "ok", total_ms / 1000.0)
+        record_context(acc.get("rag_context", ""))
+        RETRIEVAL_CHUNKS.observe(len(citations))
+        log_event("api", "request.completed", route=route, total_ms=total_ms,
+                  n_citations=len(citations), low_confidence=low_conf, mode="stream",
+                  guardrail_violations=acc.get("guardrail", {}).get("violations", []))
+        yield _sse({
+            "type": "final",
+            "answer": acc.get("final_answer", ""),
+            "citations": citations,
+            "route": route,
+            "low_confidence": low_conf,
+            "guardrail": acc.get("guardrail", {}),
+            "total_ms": total_ms,
+        })
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
 
 
 app.mount("/metrics", metrics_asgi_app())

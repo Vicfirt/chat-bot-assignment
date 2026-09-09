@@ -44,19 +44,31 @@ def build_graph():
     return g.compile()
 
 
-def run_agent(question: str, chat_history: list[dict] | None = None,
-              callbacks: list | None = None) -> dict:
+def _prepare(chat_history: list[dict] | None):
     global _compiled
     if _compiled is None:
         _compiled = build_graph()
-
     from app.observability.logging import configure_logging, get_request_id, new_request_id, set_request_id
 
     configure_logging()
     if get_request_id() == "-":
         set_request_id(new_request_id())
+    return {"question": "", "chat_history": chat_history or [], "retry_count": 0}
 
+
+def run_agent(question: str, chat_history: list[dict] | None = None,
+              callbacks: list | None = None) -> dict:
+    state = {**_prepare(chat_history), "question": question}
     return _compiled.invoke(
-        {"question": question, "chat_history": chat_history or [], "retry_count": 0},
-        config={"callbacks": callbacks or [], "recursion_limit": 25},
+        state, config={"callbacks": callbacks or [], "recursion_limit": 25},
+    )
+
+
+def run_agent_stream(question: str, chat_history: list[dict] | None = None,
+                     callbacks: list | None = None):
+    """Yield one `{node: node_output}` dict per graph step as it completes."""
+    state = {**_prepare(chat_history), "question": question}
+    return _compiled.stream(
+        state, config={"callbacks": callbacks or [], "recursion_limit": 25},
+        stream_mode="updates",
     )

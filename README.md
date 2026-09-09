@@ -506,6 +506,16 @@ LLM_MODE=dummy python -m loadtest.run_load --api-url http://localhost:8000 --n 1
 
 ## Known limitations
 
+- **The LLM is the ceiling on answer quality.** Prose answers are written by
+  `llama3.2:3b` — a small local model that can misread or over-generalise the
+  retrieved text and mis-state figures. Calc answers lead with the deterministic
+  tool's line so the number is never the model's; rule-lookup prose is guarded
+  only by the citation + grounding checks, not by a faithfulness judge. The model
+  knows nothing beyond the retrieved context — a stale index yields stale answers
+  with no signal that anything is wrong. Output is non-deterministic even at
+  `temperature 0.1`; `LLM_MODE=dummy` is reproducible but returns stub text, so
+  the offline path validates the *pipeline*, not answer quality. And it is slow:
+  ~3–4 min/answer on CPU (also the [main bottleneck](#main-bottleneck)).
 - **Calculator.** `total_tax` is tax *before* credits; the headline figure
   (`tax_after_credits`) subtracts only a non-refundable Child Tax Credit. The
   income input is treated as **gross** — the tool subtracts the standard

@@ -146,6 +146,30 @@ a table-first boost for amount questions), relevance grading, and context
 assembly with citations. The `candidates → reranked → kept` counts flow back to
 the API (`retrieval_funnel`) and show in the Streamlit trace panel.
 
+### RAG techniques
+
+**In the pipeline:** hybrid retrieval (dense + BM25 → RRF), cross-encoder rerank
+with a table-first boost for amount queries, structure-aware chunking (split on
+headings; tables and worked examples kept atomic), query expansion (LLM rewrite
++ deterministic domain hints + `tax_profile`-driven table/schedule queries), a
+corrective retrieval loop (`grade_docs → expand_query` when results are thin,
+`validate → retrieve` when the answer is ungrounded), follow-up condensing
+against chat history, `tax_year` metadata filtering, and in-process
+embedding + subgraph caches.
+
+**Considered, deliberately out** — each fights the latency budget, needs an
+ingest/training redesign, or both:
+
+| Technique | Why not here / cheapest entry point |
+|---|---|
+| **Self-RAG / CRAG** — LLM relevance grader, reflection tokens | the `grade_docs` + `validate` loops are the deterministic version of this. A real LLM grader adds a call per retrieval round (against the "cut LLM calls" goal); reflection tokens need a fine-tuned model. Entry point: swap the `grade_docs` score threshold for a one-shot LLM relevance vote, behind a flag. |
+| **Contextual retrieval** — LLM writes a situating blurb per chunk before embedding | strong published lift on exactly our table-retrieval gap, but a one-time ~1.5k LLM calls with a model stronger than the 3B. The deterministic table-caption idea is the no-LLM approximation. |
+| **Propositional chunking** — rewrite passages into atomic standalone statements | raises `context_precision` but loses the verbatim text, which fights the "quote the exact publication + page" requirement. |
+| **Hierarchical / small-to-big** — retrieve tight chunks, feed the LLM the enclosing section | the direct lever on `context_precision` (≈ 0.31); needs a parent-document store beside the chunk index. |
+| **RAPTOR** — recursive LLM-built summary tree | same ingest-cost class as contextual retrieval, for a corpus (~1.5k chunks) small enough that the payoff is marginal. |
+| **HyDE** — embed a hypothetical answer | adds an LLM call per query and helps least on number/table-heavy corpora. |
+| **Fine-tuned / larger embeddings** | `bge-small` is generic; tax terms of art ("qualifying relative", "MFJ") would benefit from a domain-tuned encoder. Needs a few hundred+ synthetic (query, positive, hard-negative) triples and a training run, and breaks "bake a stock model into the image". Try `bge-base` (768-d, stock) first. |
+
 ### Data source
 
 Three IRS publications for tax year 2025, chosen to cover the question space with
@@ -575,18 +599,7 @@ Deliberately left out to keep the prototype lean; each is a bounded add-on:
   - *±1-page label tolerance* — reported alongside strict
     (`recall_at_k_tol1`, `mrr_tol1`).
 
-  Still open:
-  - *`R@10`*, and better labels for the residual misses (q04, q12 land on pages
-    adjacent to the gold ones).
-  - *Agentic / contextual chunking* — an LLM writes a short situating blurb per
-    chunk before embedding ("This table gives the 2025 standard deduction by
-    filing status…"), so number-only tables become retrievable by plain-language
-    questions. Anthropic's *contextual retrieval* reports ~35–49% fewer failed
-    retrievals from exactly this. It's a one-time ingest cost (one call per chunk
-    × ~1.5k, needs a model stronger than the 3B) — no per-query latency — and the
-    deterministic table-caption idea is its no-LLM approximation. **Caveat for
-    this project:** the *propositional* variant (LLM rewrites passages into atomic
-    standalone statements) raises `context_precision` but loses the verbatim text,
-    which fights the "quote the exact publication + page" requirement; the
-    *prepend-and-keep-original* variant does not.
-  - *Larger embedding model* (`bge-base`, 768-d) — last, ~2× index + encode cost.
+  Still open: `R@10`; better labels for the residual misses (q04, q12 land on
+  pages adjacent to the gold ones); and the heavier techniques in
+  [RAG techniques](#rag-techniques) (contextual / propositional chunking,
+  hierarchical retrieval, fine-tuned embeddings).

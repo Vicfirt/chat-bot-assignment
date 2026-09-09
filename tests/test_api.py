@@ -46,6 +46,49 @@ def test_chat_returns_answer_and_trace(client):
     assert body["citations"][0]["pub"] == "Pub. 501"
 
 
+def test_second_identical_chat_is_served_from_cache(monkeypatch):
+    import app.api.main as api
+
+    calls = {"n": 0}
+
+    def counting_run_agent(question, chat_history=None, callbacks=None):
+        calls["n"] += 1
+        return {"route": "rag_only", "final_answer": "The standard deduction is 14,600. [Pub. 501 p.29]",
+                "citations": [{"pub": "Pub. 501", "page": 29}],
+                "validation": {"low_confidence": False},
+                "steps": [{"node": "triage", "duration_ms": 2.0, "summary": "route=rag_only"}]}
+
+    monkeypatch.setattr(api, "run_agent", counting_run_agent)
+    c = TestClient(api.app)
+
+    a = c.post("/chat", json={"question": "What is the standard deduction?"})
+    b = c.post("/chat", json={"question": "  what IS the   Standard Deduction? "})  # same after normalise
+
+    assert calls["n"] == 1                       # graph ran once
+    assert a.json()["cached"] is False
+    assert b.json()["cached"] is True
+    assert b.json()["answer"] == a.json()["answer"]
+
+
+def test_chat_with_history_is_not_cached(monkeypatch):
+    import app.api.main as api
+
+    calls = {"n": 0}
+
+    def counting_run_agent(question, chat_history=None, callbacks=None):
+        calls["n"] += 1
+        return {"route": "rag_only", "final_answer": "answer [Pub. 17 p.1]",
+                "citations": [{"pub": "Pub. 17", "page": 1}],
+                "validation": {"low_confidence": False}, "steps": []}
+
+    monkeypatch.setattr(api, "run_agent", counting_run_agent)
+    c = TestClient(api.app)
+    body = {"question": "and for married?", "chat_history": [{"role": "user", "content": "single deduction?"}]}
+    c.post("/chat", json=body)
+    c.post("/chat", json=body)
+    assert calls["n"] == 2                       # history -> cache bypassed
+
+
 def test_chat_stream_emits_steps_then_final(client):
     import json
 

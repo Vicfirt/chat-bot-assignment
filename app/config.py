@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     cache_enabled: bool = True
     cache_embedding_size: int = 512           # query-embedding LRU entries
     cache_rag_size: int = 256                 # RAG-subgraph result LRU entries
+    cache_response_size: int = 256            # end-to-end /chat response LRU entries
 
     # --- retrieval (all tunable) ---
     retrieval_mode: Literal["hybrid", "dense", "bm25"] = "hybrid"

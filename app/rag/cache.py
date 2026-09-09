@@ -1,9 +1,12 @@
-"""In-process caches for the retrieval path. Two layers:
+"""In-process caches. Three layers:
 
 * query-embedding LRU  — skips re-encoding a query string the embedder has
   already seen (queries repeat heavily once expansion + domain hints run);
 * RAG-subgraph result LRU — skips the whole subgraph (expansion LLM call +
-  dense + BM25 + RRF + rerank) for a question already answered.
+  dense + BM25 + RRF + rerank) for a question already answered;
+* end-to-end response LRU — skips the whole graph, `synthesize` included, for a
+  question already answered (used by the API, not by `run_agent` directly, so
+  the eval always runs fresh).
 
 Every key carries `index_fingerprint()`, a hash of the retrieval config plus
 the live chunk count, so a re-ingest or a knob change silently invalidates the
@@ -62,6 +65,7 @@ class LRU:
 
 _embedding_cache = LRU(get_settings().cache_embedding_size)
 _rag_cache = LRU(get_settings().cache_rag_size)
+_response_cache = LRU(get_settings().cache_response_size)
 
 
 def enabled() -> bool:
@@ -88,6 +92,7 @@ def index_fingerprint() -> str:
 def clear_all() -> None:
     _embedding_cache.clear()
     _rag_cache.clear()
+    _response_cache.clear()
 
 
 def stats() -> dict:
@@ -96,4 +101,6 @@ def stats() -> dict:
                       "misses": _embedding_cache.misses},
         "rag": {"size": len(_rag_cache), "hits": _rag_cache.hits,
                 "misses": _rag_cache.misses},
+        "response": {"size": len(_response_cache), "hits": _response_cache.hits,
+                     "misses": _response_cache.misses},
     }

@@ -14,10 +14,12 @@ from app.observability.logging import configure_logging, log_event, new_request_
 from app.observability.metrics import (
     RETRIEVAL_CHUNKS,
     metrics_asgi_app,
+    record_cache,
     record_context,
     record_request,
     record_steps,
 )
+from app.rag import cache
 
 configure_logging()
 app = FastAPI(title="Agentic RAG Tax Chatbot")
@@ -61,6 +63,21 @@ class ChatResponse(BaseModel):
     low_confidence: bool
     guardrail: dict = Field(default_factory=dict)
     retrieval_funnel: dict = Field(default_factory=dict)
+    cached: bool = False
+
+
+def _response_key(question: str) -> tuple:
+    return (cache.normalize_question(question), cache.index_fingerprint())
+
+
+def _cached_response(question: str, history: list) -> dict | None:
+    """End-to-end response cache. Unsafe with conversation history (the answer
+    depends on it) and disabled when caching is off."""
+    if history or not cache.enabled():
+        return None
+    hit = cache._response_cache.get(_response_key(question))
+    record_cache("response", hit is not None)
+    return hit
 
 
 @app.get("/health")
@@ -77,10 +94,21 @@ def health() -> dict:
 @app.post("/chat", response_model=ChatResponse)
 def chat(req: ChatRequest) -> ChatResponse:
     start = time.perf_counter()
-    rid = new_request_id()
-    set_request_id(rid)
+    set_request_id(new_request_id())
     history = [m.model_dump() for m in req.chat_history]
     log_event("api", "request.received", question=req.question, history_len=len(history))
+
+    cached = _cached_response(req.question, history)
+    if cached is not None:
+        total_ms = round((time.perf_counter() - start) * 1000, 1)
+        record_request(cached["route"], "ok", total_ms / 1000.0)
+        log_event("api", "request.completed", route=cached["route"], total_ms=total_ms,
+                  n_citations=len(cached["citations"]), cached=True)
+        return ChatResponse(**{
+            **cached, "cached": True,
+            "timings": {**cached.get("timings", {}), "total_ms": total_ms},
+        })
+
     try:
         state = run_agent(req.question, history)
     except Exception as e:  # noqa: BLE001
@@ -102,17 +130,20 @@ def chat(req: ChatRequest) -> ChatResponse:
               n_citations=len(citations), low_confidence=low_conf,
               guardrail_violations=state.get("guardrail", {}).get("violations", []))
 
-    return ChatResponse(
-        answer=state.get("final_answer", ""),
-        citations=citations,
-        route=route,
-        steps=steps,
-        timings={"total_ms": total_ms,
-                 "per_node_ms": {s["node"]: s["duration_ms"] for s in steps}},
-        low_confidence=low_conf,
-        guardrail=state.get("guardrail", {}),
-        retrieval_funnel=state.get("retrieval_funnel", {}),
-    )
+    payload = {
+        "answer": state.get("final_answer", ""),
+        "citations": citations,
+        "route": route,
+        "steps": steps,
+        "timings": {"total_ms": total_ms,
+                    "per_node_ms": {s["node"]: s["duration_ms"] for s in steps}},
+        "low_confidence": low_conf,
+        "guardrail": state.get("guardrail", {}),
+        "retrieval_funnel": state.get("retrieval_funnel", {}),
+    }
+    if not history and cache.enabled() and state.get("final_answer"):
+        cache._response_cache.put(_response_key(req.question), payload)
+    return ChatResponse(**payload)
 
 
 def _sse(obj: dict) -> str:
@@ -130,12 +161,31 @@ def chat_stream(req: ChatRequest) -> StreamingResponse:
               mode="stream")
 
     def gen():
+        cached = _cached_response(req.question, history)
+        if cached is not None:
+            total_ms = round((time.perf_counter() - start) * 1000, 1)
+            record_request(cached["route"], "ok", total_ms / 1000.0)
+            log_event("api", "request.completed", route=cached["route"],
+                      total_ms=total_ms, n_citations=len(cached["citations"]),
+                      cached=True, mode="stream")
+            yield _sse({"type": "step", "node": "cache", "duration_ms": total_ms,
+                        "summary": "response cache hit"})
+            yield _sse({"type": "final", "answer": cached["answer"],
+                        "citations": cached["citations"], "route": cached["route"],
+                        "low_confidence": cached["low_confidence"],
+                        "guardrail": cached["guardrail"],
+                        "retrieval_funnel": cached["retrieval_funnel"],
+                        "cached": True, "total_ms": total_ms})
+            return
+
         acc: dict = {}
+        step_list: list[dict] = []
         try:
             for chunk in run_agent_stream(req.question, history):
                 for _node, delta in chunk.items():
                     for s in delta.get("steps", []):
                         record_steps([s])
+                        step_list.append(s)
                         yield _sse({"type": "step", **s})
                     acc.update({k: v for k, v in delta.items() if k != "steps"})
         except Exception as e:  # noqa: BLE001
@@ -154,16 +204,21 @@ def chat_stream(req: ChatRequest) -> StreamingResponse:
         log_event("api", "request.completed", route=route, total_ms=total_ms,
                   n_citations=len(citations), low_confidence=low_conf, mode="stream",
                   guardrail_violations=acc.get("guardrail", {}).get("violations", []))
-        yield _sse({
-            "type": "final",
+        final = {
             "answer": acc.get("final_answer", ""),
             "citations": citations,
             "route": route,
             "low_confidence": low_conf,
             "guardrail": acc.get("guardrail", {}),
             "retrieval_funnel": acc.get("retrieval_funnel", {}),
-            "total_ms": total_ms,
-        })
+        }
+        if not history and cache.enabled() and final["answer"]:
+            cache._response_cache.put(_response_key(req.question), {
+                **final, "steps": step_list,
+                "timings": {"total_ms": total_ms,
+                            "per_node_ms": {s["node"]: s["duration_ms"] for s in step_list}},
+            })
+        yield _sse({"type": "final", **final, "total_ms": total_ms})
 
     return StreamingResponse(gen(), media_type="text/event-stream")
 

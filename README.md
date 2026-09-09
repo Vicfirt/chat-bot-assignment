@@ -378,12 +378,12 @@ lock-serialised) is all that's left.
 #### Optimization recommendations
 
 1. **Attack `synthesize`** — it is the request. Two independent levers:
-   *(a) end-to-end response cache* keyed on normalised question + route, checked
-   before the graph — a repeat returns in ~1 ms instead of ~24 s; the current
-   caches (`app/rag/cache.py`) stop at the RAG subgraph, so synthesis still
-   re-runs. *(b) token streaming* from `synthesize` — the `/chat/stream` SSE
-   plumbing already exists for step events; extending it to model tokens takes
-   time-to-first-token to ~1–2 s while the full answer still takes ~24 s.
+   *(a) end-to-end response cache* keyed on the normalised question, checked
+   before the graph — **done** (`app/api/main.py`): a repeat `/chat` returns in
+   ~1 ms instead of ~50 s on 1b. *(b) token streaming* from `synthesize` — the
+   `/chat/stream` SSE plumbing already exists for step events; extending it to
+   model tokens would take time-to-first-token to ~1–2 s while the full answer
+   still takes ~24 s. Not done.
 2. **Collapse the classification calls** — `triage` + `expand_query` are ~20–25%
    of a serial request and can be embeddings/rules-only (the `triage` guard
    already overrides the model for the common cases; `expand_query`'s rewrite
@@ -393,19 +393,23 @@ lock-serialised) is all that's left.
 Beyond the app: a smaller model, a GPU, or a batching server (vLLM / TGI) — all
 out of scope for a no-paid-API laptop prototype, and covered under *Concurrency*.
 
-**Caching** (`app/rag/cache.py`, in-process, `CACHE_ENABLED=false` to disable):
+**Caching** (`app/rag/cache.py`, in-process, `CACHE_ENABLED=false` to disable) —
+three LRUs, each keyed with `index_fingerprint()` (retrieval config + live chunk
+count) so a re-ingest or a knob change invalidates automatically. Hit/miss
+counts are on `/metrics` as `rag_cache_events_total{cache=…}`:
 
-- **query-embedding LRU** — skips re-encoding a query string already seen
-  (expansion + domain hints make queries repeat).
-- **RAG-subgraph result LRU** — a repeated question skips the whole subgraph
+- **query-embedding** — skips re-encoding a query string already seen (expansion
+  + domain hints make queries repeat).
+- **RAG-subgraph result** — a repeated question skips the whole subgraph
   (expansion LLM call + dense + BM25 + RRF + rerank).
+- **end-to-end response** (`app/api/main.py`) — a repeated question skips the
+  **entire graph, `synthesize` included**: on `llama3.2:1b` a cold `/chat` is
+  ~50 s, a cache hit is ~1 ms (verified). Bypassed when the request carries
+  chat history (the answer depends on it); the response is marked `cached: true`.
+  This is recommendation 1(a) below, implemented.
 
-Both keys carry an `index_fingerprint()` (retrieval config + live chunk count),
-so a re-ingest or a knob change invalidates them automatically. Hit/miss counts
-are on `/metrics` as `rag_cache_events_total`.
-
-Moving both caches to Redis is what lets multiple API workers share them (see
-concurrency below); the end-to-end response cache is recommendation #2 above.
+Moving these to Redis is what lets multiple API workers share them (see
+concurrency below).
 
 **Concurrency.** The API is one `uvicorn` process; FastAPI runs the sync
 `/chat` handler on its threadpool, so concurrent requests do run on separate

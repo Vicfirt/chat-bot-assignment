@@ -27,7 +27,8 @@ In `LLM_MODE=ollama` `synthesize` (the ~400-token cited answer, generated on CPU
 
 ## Optimization recommendations
 
-1. **Attack `synthesize`.** It is ~90% of the request. Two independent levers: (a) an **end-to-end response cache** keyed on normalised question + route, checked before the graph — a repeat returns in ~1 ms instead of ~30 s; the current caches (`app/rag/cache.py`) stop at the RAG subgraph, so synthesis still re-runs. (b) **Token streaming** from `synthesize` — the `/chat/stream` SSE plumbing already exists for step events; extending it to model tokens drops time-to-first-token to ~1-2 s while the full answer still takes ~30 s.
+1. **Attack `synthesize`.** It is ~90% of the request. (a) An **end-to-end response cache** keyed on the normalised question, checked before the graph — *implemented* in `app/api/main.py`: a repeat `/chat` returns in ~1 ms instead of tens of seconds. (b) **Token streaming** from `synthesize` — the `/chat/stream` SSE plumbing already carries step events; extending it to model tokens would drop time-to-first-token to ~1-2 s while the full answer still takes ~30 s. Not done.
+
 2. **Collapse the classification calls.** `triage` and `expand_query` are ~20-25% of a serial request (measured: ~3 s + ~5 s on `llama3.2:1b`) and can be embeddings/rules-only — the deterministic guard in `triage` already overrides the model for the common cases, and `expand_query`'s rewrite buys little over the domain-hint + `tax_profile` queries. Bonus: routing becomes deterministic.
 
 ## Note on the tail

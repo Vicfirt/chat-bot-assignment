@@ -678,6 +678,12 @@ LLM_MODE=ollama LLM_MODEL=llama3.2:1b python -m loadtest.run_load \
 - **Concurrency.** Retrieval is serialised by a process-wide lock (native
   thread-safety) — one retrieval at a time. No request cancellation: `/chat`
   runs to completion regardless of the client.
+- **UI has no persistence.** The Streamlit chat lives in `st.session_state`,
+  which Streamlit clears on a full page reload — refreshing the browser starts a
+  new session and the visible history is gone (the API keeps no session state
+  either). Reruns within a connection (sending a message, widget clicks) are
+  fine. Persisting across reloads would mean writing history to disk keyed by a
+  `st.query_params` id; left out as demo scope.
 - **Safety.** No input moderation, prompt-injection / jailbreak screening, rate
   limiting, or abuse policy — production would add a pre/post model (see
   *Architecture*). The output guardrails (SSN redaction, citation + numeric

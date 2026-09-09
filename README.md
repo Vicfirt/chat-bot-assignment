@@ -193,14 +193,43 @@ normalized question + route (skips synthesis too); replacing the `grade_docs`
 step with a pure score threshold; and moving both caches to Redis so multiple
 API workers share them — which also unblocks the concurrency issue below.
 
-**Known issue — concurrency:** the API is served by a single `uvicorn` process
-with a synchronous `/chat` handler, so concurrent requests run on the thread
-pool and share one embedded-Chroma client. At concurrency >= 2 the retrieval
-path crashes the worker (native crash, no Python traceback; the load test then
-reports connection errors). The load-test artifact is therefore captured at
-concurrency 1. Fixing this is the top reliability item: give each worker its own
-Chroma client / serialize retrieval, or run the model server (or a retrieval
-service) out of process and scale the API with multiple worker processes.
+**Known issue — concurrency.** The API is one `uvicorn` process; FastAPI runs
+the sync `/chat` handler on its threadpool, so concurrent requests do run on
+separate threads — but they share process-global state that is not built for
+that: one `chromadb.PersistentClient` (SQLite + hnswlib), one
+`SentenceTransformer`, one `CrossEncoder`, the BM25 index, and the `_compiled`
+graph. At concurrency ≥ 2 the retrieval path segfaults the worker (native
+crash, no Python traceback) — the shared Chroma client is the prime suspect.
+The load test is therefore pinned to concurrency 1.
+
+**How it would be fixed** (design, not implemented — it is infrastructure, not
+RAG, work):
+
+1. *Minimal correct fix — serialize the unsafe section.* A `threading.Lock`
+   around the Chroma query + `.encode` / `.predict` in `HybridRetriever`. ~10
+   lines, stays single-process. Retrieval becomes serial (fine at low QPS —
+   it's ~100 ms warm), while the 3–4 min LLM synthesis still overlaps across
+   threads. BM25 (`rank_bm25`) and the loaded models are read-only and safe to
+   share; only the Chroma client and the torch forward passes need guarding.
+2. *Per-worker Chroma clients.* One `PersistentClient` per thread/worker
+   pointing at the same read-only path (SQLite handles multiple readers), so
+   retrieval parallelises. Model instances: a small pool, or keep a lock just
+   around inference.
+3. *Async request path.* `async def chat` + `await _compiled.ainvoke(...)` /
+   `async for … in _compiled.astream(...)` (LangGraph supports both; sync nodes
+   run in a threadpool). LLM calls move to `ollama.AsyncClient` — the real win,
+   since a request awaiting a multi-minute generation no longer holds a thread.
+   CPU-bound bits (embedding, rerank, BM25) go through `asyncio.to_thread` or a
+   `ProcessPoolExecutor`; Chroma calls (no async client) stay wrapped with #2.
+4. *Scale out.* Move retrieval + models into a separate service (HTTP/gRPC) so
+   the agent API holds no native state and can run `uvicorn --workers N` behind
+   nginx/traefik; the in-process LRUs move to **Redis** (see caching above).
+   Ollama then becomes the throughput ceiling — answered with multiple Ollama
+   replicas or a batching server (vLLM/TGI), out of scope for a local, no-paid-API
+   prototype.
+
+For this codebase the realistic path is **#1 now** (kill the segfault) and
+**#3 + #2** as the documented target; #4 only if it needs to serve real traffic.
 
 **No request cancellation.** `/chat` runs the graph to completion regardless of
 the client; there is no abort path (it would need the async/multi-worker rework
@@ -314,8 +343,10 @@ LLM_MODE=dummy python -m loadtest.run_load --api-url http://localhost:8000 --n 1
 
 Deliberately left out to keep the prototype lean; each is a bounded add-on:
 
-- **Concurrency** — async `/chat`, per-worker Chroma client (or an out-of-process
-  retrieval service), multi-worker uvicorn. This is the top reliability item.
+- **Concurrency** — the top reliability item; full design under *Known issue —
+  concurrency* above (lock the Chroma/model critical section now; async request
+  path + per-worker clients as the target; a retrieval service + multi-worker +
+  Redis to scale).
 - **Request cancellation** — a cancel endpoint that trips a flag checked between
   nodes / aborts the Ollama call; depends on the async rework above.
 - **Langfuse** (LLM trace tree) — `run_agent` / `run_agent_stream` already take a

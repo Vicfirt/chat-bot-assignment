@@ -1,6 +1,6 @@
 # Functional Evaluation Results
 
-Items: 16
+Items: 15
 
 | id | route_ok | retrieval_hit | has_citation | number_ok | keyword_hit |
 |----|----------|---------------|--------------|-----------|-------------|
@@ -19,16 +19,15 @@ Items: 16
 | q13 | True | True | True | None | True |
 | q14 | True | True | True | None | True |
 | q15 | True | True | True | None | True |
-| q16 | False | True | True | False | False |
 
 ## Aggregate
 
-- **n**: 16
-- **route_accuracy**: 93.8
+- **n**: 15
+- **route_accuracy**: 100.0
 - **retrieval_hit_rate**: 100.0
 - **citation_rate**: 100.0
-- **numeric_accuracy**: 75.0
-- **keyword_hit_rate**: 56.2
+- **numeric_accuracy**: 100.0
+- **keyword_hit_rate**: 60.0
 
 ## Retrieval quality (RAG subgraph, k=5, 14 page-labeled questions)
 

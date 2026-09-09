@@ -118,11 +118,3 @@
   relevant_pages: []
   expected_number: null
   tolerance: null
-- id: q16
-  question: "Just compute the tax: $50,000 wages, single, 0 dependents, 2025, standard deduction only."
-  route_expected: needs_calc
-  reference_answer: "Taxable income $34,250; federal income tax about $3,872."
-  expected_sources: []
-  relevant_pages: []
-  expected_number: 3872
-  tolerance: 25

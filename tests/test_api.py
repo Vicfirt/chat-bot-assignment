@@ -31,7 +31,9 @@ def client(monkeypatch):
 def test_health(client):
     r = client.get("/health")
     assert r.status_code == 200
-    assert r.json()["status"] == "ok"
+    body = r.json()
+    assert body["status"] in {"ok", "degraded"}   # degraded when no index is built
+    assert "index_chunks" in body
 
 
 def test_chat_returns_answer_and_trace(client):

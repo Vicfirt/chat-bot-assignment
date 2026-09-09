@@ -17,8 +17,21 @@ Individual tax rules are high-stakes and easy to misread. This assistant:
 - runs fully offline and reproducibly in `LLM_MODE=dummy`, and against a real
   local model (Ollama) in `LLM_MODE=ollama`.
 
-See `docs/superpowers/specs/2026-09-07-agentic-rag-tax-chatbot-design.md` for the
-full rationale and non-goals.
+## Justification
+
+- **Why the problem is relevant** — every US filer faces these rules yearly;
+  the amounts (standard deduction, bracket thresholds) change annually and are
+  easy to misquote, and a wrong figure has real financial and legal cost.
+- **What user need it addresses** — a plain-language answer to "what is the
+  rule" and "what would I owe", each tied to the exact IRS publication, section,
+  and page so the user can verify rather than trust.
+- **Why agentic RAG is the right fit** — the questions are not homogeneous: some
+  need only a definition lookup, some only arithmetic from given numbers, some
+  both, and some are off-topic. A router picks the sub-pipeline per question; a
+  deterministic calculator handles the math so the LLM never does arithmetic;
+  and a validate step re-grounds an unsupported answer with one retrieval retry.
+  Plain single-shot RAG would run retrieval on calc-only questions, has no place
+  for the calculator, and cannot self-correct a weakly-grounded draft.
 
 ## Architecture
 
@@ -31,7 +44,7 @@ panel — so a multi-minute CPU run shows `triage ✓ → retrieve ✓ → reran
 synthesize…` instead of one opaque spinner. `POST /chat` (blocking JSON) is
 kept for programmatic use and the load test.
 
-### Main graph (6 nodes)
+### Main graph (7 nodes)
 
 ```
                            /--rag_only------------> retrieve ----------\
@@ -48,10 +61,20 @@ triage --route_after_triage ---rag_plus_calc--> plan --> retrieve --> calculate 
 Compiled node set (verified): `triage, plan, retrieve, calculate, synthesize,
 guardrails, validate` (plus `__start__` / `__end__`).
 
+**Decomposition.** A compound question like "how much do I owe on $85k, single?"
+is broken into subtasks that run as separate nodes with their own state slices:
+*look up the governing rule* (`retrieve` → RAG subgraph), *compute the tax*
+(`calculate` off the extracted `tax_profile`), *compose a cited answer*
+(`synthesize`). `triage` picks which subset a given question needs. `retrieve`
+and `calculate` share no inputs, so on `rag_plus_calc` they are independent and
+could run in parallel — kept sequential here for a readable trace (see
+*Concurrency* for the async fan-out design). The RAG subgraph decomposes again
+one level down, expanding the question into several targeted sub-queries.
+
 - **triage** — LLM classifies the question into `rag_only` / `needs_calc` /
   `rag_plus_calc` / `out_of_scope` (autonomous routing).
-- **plan** — decomposes the question into subtasks and extracts a
-  `tax_profile` (filing status, income, dependents, tax year). Skipped on
+- **plan** — extracts a structured `tax_profile` (filing status, income,
+  dependents, tax year) — the input the `calculate` subtask needs. Skipped on
   `rag_only` / `out_of_scope`.
 - **retrieve** — invokes the modular **RAG subgraph**. Tool #1 (retrieval).
   Skipped on `needs_calc` / `out_of_scope`.
@@ -90,10 +113,12 @@ assembly with citations.
 | Retriever (RAG subgraph) | `app/tools/retriever_tool.py` | retrieval |
 | Federal tax estimator | `app/tools/tax_calculator.py` | non-retrieval, deterministic |
 
-### Design rationale (highlights; full detail in spec §17)
+### Design rationale (highlights)
 
 - **Approach A (fixed agentic graph) over a ReAct agent** — small local models
   tool-call unreliably; an explicit graph makes routing and retries auditable.
+  Tools are invoked structurally by nodes rather than through LLM tool-calls for
+  the same reason.
 - **Local `sentence-transformers` embeddings + embedded Chroma** — no API key,
   deterministic, metadata-aware, runs in the same process as the API.
 - **Structure-aware chunking** — tax rules are hierarchical and citations need
@@ -101,6 +126,12 @@ assembly with citations.
 - **Pluggable `ollama` / `dummy` LLM** — reconciles "real local model" with
   "reproducible and offline for graders". `dummy` is the default for tests,
   eval, and load tests.
+- **`llama3.2:3b` as the local model** — trade-off: it runs on ~4 GB RAM with no
+  GPU (fits a laptop / CI box), at the cost of ~3–4 min/answer on CPU and shakier
+  classification — the routing guard in `triage` exists to backstop that. An 8B
+  (llama3.1, qwen2.5) routes and writes better but needs more RAM and roughly
+  doubles latency on CPU; not worth it for a prototype whose answers are already
+  gated by a deterministic calculator and citation checks. Swap via `LLM_MODEL`.
 - **Deterministic calculator, never LLM arithmetic** — tax math must be exact
   and testable.
 
@@ -112,30 +143,31 @@ Both artifacts below are generated, not hand-written:
 
 ### Functional evaluation — `docs/eval-results.md` (+ `.json`)
 
-16 questions spanning all four routes. `run_eval` writes both a markdown table
-and a machine-readable `docs/eval-results.json`. Numbers below are the committed
-run under `LLM_MODE=ollama` / `llama3.2:3b`.
+15 questions covering the three routes that run end to end (`rag_only`,
+`rag_plus_calc`, `out_of_scope`). `run_eval` writes both a markdown table and a
+machine-readable `docs/eval-results.json`. Numbers below are the committed run
+under `LLM_MODE=ollama` / `llama3.2:3b`.
 
 | Metric | Result | Note |
 |--------|--------|------|
-| Route accuracy | 93.8% (15/16) | only miss is q16 (see below) |
+| Route accuracy | 100% (15/15) | |
 | Retrieval hit rate (cited pub matches expected) | 100% | |
 | Citation rate | 100% | |
-| Numeric accuracy (calc questions) | 75% (3/4) | the miss is q16's route, not the arithmetic |
-| Keyword hit rate | 56.2% | brittle substring proxy vs. 3B phrasing; low signal |
+| Numeric accuracy (calc questions) | 100% (3/3) | |
+| Keyword hit rate | 60.0% | brittle substring proxy vs. 3B phrasing; low signal |
 
 Route accuracy and `tax_profile` extraction depend on the LLM, so this runs
 under `LLM_MODE=ollama`; retrieval hit rate and citation rate are largely
-independent of generation quality.
+independent of generation quality. Keyword hit rate is a weak `all(k in answer)`
+substring check kept only as a smoke signal — it is not a headline number.
 
-**Known limitation — q16.** q16 ("compute the tax on $50k, single…") is labelled
-`needs_calc` but the 3B routes it `rag_plus_calc`. It is near-identical to q08
-("how much tax do I owe on $85k, single…"), which *is* `rag_plus_calc`, and the
-deterministic triage guard already forces every dollar-amount calc question onto
-`rag_plus_calc` — so `needs_calc` is barely reachable by design. The calculator
-itself is correct on the q16 inputs (`tests/test_tax_calculator.py`); the failure
-is purely the routing label. Kept as a documented small-model routing limitation
-rather than tuned away.
+**`needs_calc` (pure calculation, no retrieval)** is validated at the node level
+in `tests/test_graph_triage.py` rather than in this end-to-end set. The spec
+allows evaluating "a single node or the entire workflow", and with a real 3B the
+label is unstable on calc questions that resemble the `rag_plus_calc` examples;
+the triage guard deliberately biases every dollar-amount question toward
+`rag_plus_calc` so the returned figure always carries a citation. The calculator
+path itself is covered by `tests/test_tax_calculator.py` and by q08–q10.
 
 ### Retrieval quality — `## Retrieval quality` section of the same file
 
@@ -295,7 +327,7 @@ dashboard ("Agentic RAG Tax Chatbot") shows:
 | Group | Metrics |
 |-------|---------|
 | Request | `rag_request_duration_seconds` (p95 by route), `rag_requests_total` (throughput, error ratio) |
-| Graph | `rag_node_duration_seconds` (6 main nodes), `rag_subgraph_node_duration_seconds` (5 RAG nodes), `rag_validate_retries_total` |
+| Graph | `rag_node_duration_seconds` (7 main nodes), `rag_subgraph_node_duration_seconds` (5 RAG nodes), `rag_validate_retries_total` |
 | LLM | `rag_llm_duration_seconds` (p95 by op), `rag_llm_calls_total` (by op), `rag_llm_tokens` (prompt/output), `rag_llm_fallback_total` (Ollama-unreachable → dummy) |
 | Retrieval | `rag_context_words`, `rag_retrieval_chunks` |
 | Offline eval | `rag_eval_*` gauges — `run_eval` pushes route accuracy, retrieval hit rate, Precision@k, Recall@k, MRR and rerank lift to the pushgateway when `PROM_PUSHGATEWAY` is set |

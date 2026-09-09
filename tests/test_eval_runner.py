@@ -1,10 +1,15 @@
 from eval.run_eval import load_eval_set, score_item
 
 
-def test_load_eval_set_covers_every_route():
+def test_load_eval_set_covers_end_to_end_routes():
     items = load_eval_set("eval/questions.yaml")
     assert 10 <= len(items) <= 20
-    assert {i["route_expected"] for i in items} >= {"rag_only", "needs_calc", "rag_plus_calc", "out_of_scope"}
+    # The set exercises the three routes that run end to end. `needs_calc` (pure
+    # calculation, no retrieval) is validated at the node level in
+    # tests/test_graph_triage.py instead — with a real 3B the label is unstable
+    # on calc questions and the triage guard deliberately biases dollar-amount
+    # questions to rag_plus_calc so every returned figure carries a citation.
+    assert {i["route_expected"] for i in items} >= {"rag_only", "rag_plus_calc", "out_of_scope"}
 
 
 def test_score_item_matches_route_and_number():

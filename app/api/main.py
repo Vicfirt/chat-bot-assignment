@@ -23,6 +23,25 @@ configure_logging()
 app = FastAPI(title="Agentic RAG Tax Chatbot")
 
 
+def _index_size() -> int:
+    """Chunk count in the embedded Chroma index, or -1 if it can't be read."""
+    try:
+        from app.rag.retriever import get_retriever
+
+        return get_retriever()._dense.count()
+    except Exception:  # noqa: BLE001
+        return -1
+
+
+@app.on_event("startup")
+def _warn_if_no_index() -> None:
+    n = _index_size()
+    if n <= 0:
+        log_event("api", "index.empty", level=logging.WARNING, chunks=n,
+                  hint="run `make ingest` (or `python -m app.ingest.build_index`) "
+                       "before serving — retrieval will return no citations")
+
+
 class Msg(BaseModel):
     role: str
     content: str
@@ -45,7 +64,13 @@ class ChatResponse(BaseModel):
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok", "llm_mode": get_settings().llm_mode}
+    n = _index_size()
+    return {
+        "status": "ok" if n > 0 else "degraded",
+        "llm_mode": get_settings().llm_mode,
+        "index_chunks": n,
+        **({} if n > 0 else {"detail": "vector index empty — run `make ingest`"}),
+    }
 
 
 @app.post("/chat", response_model=ChatResponse)

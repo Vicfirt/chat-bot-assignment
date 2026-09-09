@@ -14,7 +14,6 @@ class AgentState(TypedDict, total=False):
     question: str
     chat_history: list[dict]
     route: str
-    subtasks: list[str]
     tax_profile: dict | None
     rag_context: str
     citations: list[dict]

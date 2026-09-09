@@ -42,7 +42,6 @@ def test_plan_extracts_tax_profile():
     assert tp["gross_income"] == 85000
     assert tp["filing_status"] == "single"
     assert tp["dependents"] == 0
-    assert len(out["subtasks"]) >= 2
 
 
 def test_plan_income_ignores_year_and_dependent_count():
@@ -60,4 +59,3 @@ def test_plan_noop_for_rag_only():
     out = plan({"question": "who can claim head of household?", "chat_history": [],
                 "route": "rag_only"})
     assert out["tax_profile"] is None
-    assert out["subtasks"] == ["retrieve"]

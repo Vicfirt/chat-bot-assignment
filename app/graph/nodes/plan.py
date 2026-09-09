@@ -54,10 +54,8 @@ def plan(state: dict) -> dict:
     start = time.perf_counter()
     route = state.get("route", "rag_only")
     if route == "rag_only":
-        return {"subtasks": ["retrieve"], "tax_profile": None,
+        return {"tax_profile": None,
                 **record_step("plan", start, "no calc needed")}
     profile = _extract_profile(state["question"])
-    subtasks = (["retrieve", "calculate", "synthesize"]
-                if route == "rag_plus_calc" else ["calculate", "synthesize"])
-    return {"subtasks": subtasks, "tax_profile": profile,
+    return {"tax_profile": profile,
             **record_step("plan", start, f"profile={profile}")}

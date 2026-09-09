@@ -39,6 +39,28 @@ def test_calc_flow_produces_calc_result():
     assert state["calc_result"] and state["calc_result"].get("total_tax", 0) > 0
 
 
+def test_rag_plus_calc_fans_out_retrieve_and_calculate():
+    state = run_agent(
+        "What is my federal tax after the standard deduction on $85,000, single, 0 dependents, 2024?",
+        [],
+    )
+    assert state["route"] == "rag_plus_calc"
+    nodes = [s["node"] for s in state["steps"]]
+    # plan fans out to both independent subtasks, which rejoin at synthesize
+    assert "retrieve" in nodes and "calculate" in nodes
+    assert nodes.index("plan") < nodes.index("retrieve")
+    assert nodes.index("plan") < nodes.index("calculate")
+    assert max(nodes.index("retrieve"), nodes.index("calculate")) < nodes.index("synthesize")
+    assert state["citations"] and state["calc_result"]["total_tax"] > 0
+
+
+def test_rag_only_skips_calculate():
+    state = run_agent("What is the standard deduction for single filers?", [])
+    if state["route"] == "rag_only":
+        assert "calculate" not in [s["node"] for s in state["steps"]]
+        assert state.get("calc_result") is None
+
+
 def test_out_of_scope_short_circuits():
     state = run_agent("What is the capital of France?", [])
     assert state["route"] == "out_of_scope"

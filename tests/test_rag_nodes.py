@@ -17,6 +17,32 @@ def test_expand_query_adds_domain_hint_for_brackets():
     assert any("Tax Rate Schedules" in q for q in out["queries"])
 
 
+def test_expand_query_condenses_followup_against_history(monkeypatch):
+    from app.rag.nodes import expand_query as eq
+
+    class _Stub:
+        def complete(self, prompt, *, system=None, max_tokens=512):
+            if "Follow-up:" in prompt:
+                return "What is the standard deduction for married filing jointly?"
+            return ""   # no extra expansion lines
+
+    monkeypatch.setattr(eq, "get_llm", lambda: _Stub())
+    out = eq.expand_query({
+        "question": "what about married filing jointly?",
+        "chat_history": [
+            {"role": "user", "content": "What is the standard deduction for a single filer?"},
+            {"role": "assistant", "content": "It is $15,750 for 2025."},
+        ],
+        "rounds": 0,
+    })
+    assert out["queries"][0] == "What is the standard deduction for married filing jointly?"
+
+
+def test_expand_query_no_history_uses_question_verbatim():
+    out = expand_query({"question": "qualifying child tests", "chat_history": [], "rounds": 0})
+    assert out["queries"][0] == "qualifying child tests"
+
+
 def test_retrieve_candidates_unions_and_dedupes(monkeypatch):
     from app.rag import retriever as rmod
 

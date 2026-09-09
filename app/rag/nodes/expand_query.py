@@ -6,6 +6,31 @@ from app.llm.provider import get_llm
 from app.rag.state import RagState
 
 _SYS = "Rewrite the user's tax question into short standalone search queries, one per line."
+_CONDENSE_SYS = (
+    "Given the recent conversation and a follow-up question, rewrite the follow-up "
+    "as a single standalone question that needs no prior context. Reply with the "
+    "rewritten question only."
+)
+
+
+def _standalone_question(question: str, chat_history: list[dict]) -> str:
+    """Fold the last turns into the question so a follow-up ('what about for
+    married?') retrieves correctly. No-op when there is no history."""
+    turns = [m for m in (chat_history or []) if m.get("content")]
+    if not turns:
+        return question
+    convo = "\n".join(f"{m.get('role', 'user')}: {m['content']}" for m in turns[-4:])
+    try:
+        rewritten = get_llm().complete(
+            f"Conversation:\n{convo}\n\nFollow-up: {question}",
+            system=_CONDENSE_SYS, max_tokens=64,
+        ).strip().splitlines()[0].strip()
+    except Exception:  # noqa: BLE001 - retrieval must not crash on LLM failure
+        return question
+    # Reject an unusable rewrite (empty, the dummy LLM's echo, or a runaway).
+    if not rewritten or rewritten.startswith("[dummy]") or len(rewritten) > 4 * len(question) + 80:
+        return question
+    return rewritten
 
 # The IRS pubs use fixed terms of art that user phrasing rarely matches. A small
 # deterministic map bridges the gap so retrieval doesn't depend on the local
@@ -23,7 +48,8 @@ _DOMAIN_HINTS: list[tuple[re.Pattern, str]] = [
 
 
 def expand_query(state: RagState) -> dict:
-    question = state["question"]
+    raw_question = state["question"]
+    question = _standalone_question(raw_question, state.get("chat_history", []))
     rounds = state.get("rounds", 0) + 1
     queries = [question]
     try:
@@ -44,6 +70,7 @@ def expand_query(state: RagState) -> dict:
 
     from app.observability.logging import log_event
 
-    log_event("expand_query", "expanded", question=question, queries=queries,
-              n=len(queries), round=rounds)
+    log_event("expand_query", "expanded", question=raw_question,
+              standalone=question if question != raw_question else None,
+              queries=queries, n=len(queries), round=rounds)
     return {"queries": queries, "rounds": rounds}

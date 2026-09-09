@@ -17,6 +17,7 @@ class AgentState(TypedDict, total=False):
     tax_profile: dict | None
     rag_context: str
     citations: list[dict]
+    retrieval_funnel: dict
     calc_result: dict | None
     draft_answer: str
     final_answer: str

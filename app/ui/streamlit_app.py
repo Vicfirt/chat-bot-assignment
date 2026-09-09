@@ -39,11 +39,21 @@ def stream_api(question: str, history: list[dict], api_url: str,
             client.close()
 
 
-def render_trace(steps: list[dict], citations: list[dict], route: str) -> None:
+def render_trace(steps: list[dict], citations: list[dict], route: str,
+                 funnel: dict | None = None) -> None:
     with st.expander("Agent trace", expanded=True):
         st.markdown(f"**Route:** `{route}`")
         for s in steps:
             st.markdown(f"- **{s['node']}** ({s['duration_ms']} ms) — {s['summary']}")
+        if funnel:
+            if funnel.get("cached"):
+                st.markdown("**Retrieval:** served from cache")
+            else:
+                st.markdown(
+                    f"**Retrieval funnel:** {funnel.get('candidates', '?')} candidates "
+                    f"(dense + BM25 + RRF) → {funnel.get('reranked', '?')} reranked "
+                    f"(cross-encoder) → {funnel.get('kept', '?')} kept for the prompt"
+                )
         if citations:
             st.markdown("**Citations**")
             for c in citations:
@@ -102,7 +112,8 @@ def main() -> None:
         answer = "⚠️ Low confidence.\n\n" + answer
     st.chat_message("assistant").write(answer)
     st.session_state.history.append({"role": "assistant", "content": answer})
-    render_trace(steps, data.get("citations", []), data.get("route", "?"))
+    render_trace(steps, data.get("citations", []), data.get("route", "?"),
+                 data.get("retrieval_funnel", {}))
 
 
 try:

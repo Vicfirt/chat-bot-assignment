@@ -59,3 +59,12 @@ def plan(state: dict) -> dict:
     profile = _extract_profile(state["question"])
     return {"tax_profile": profile,
             **record_step("plan", start, f"profile={profile}")}
+
+
+def route_after_plan(state: dict) -> list[str] | str:
+    """`rag_plus_calc` fans out: retrieval and calculation are independent
+    subtasks (one keys on the question, the other on `tax_profile`) and run as
+    parallel branches that rejoin at `synthesize`."""
+    if state.get("route") == "rag_plus_calc":
+        return ["retrieve", "calculate"]
+    return "calculate"

@@ -47,47 +47,60 @@ kept for programmatic use and the load test.
 ### Main graph (7 nodes)
 
 ```
-                           /--rag_only------------> retrieve ----------\
-triage --route_after_triage ---rag_plus_calc--> plan --> retrieve --> calculate --> synthesize --> guardrails --> validate --(retry->retrieve | end)
-                           \--needs_calc-------> plan --> calculate --/                                          ^
-                           \--out_of_scope-------------------------------------------> synthesize --------------/
+triage --+-- rag_only ------------------------> retrieve ----------------+
+         |                                                               |
+         +-- needs_calc ----- plan ----------> calculate ----------------+--> synthesize --> guardrails --> validate --+
+         |                                                               |                                    ^        |
+         +-- rag_plus_calc -- plan --+--> retrieve --+  (parallel        |                                    |        |
+         |                           +--> calculate -+   fan-out, both --+                          retry --> retrieve  |
+         |                                                joins here)                                                   |
+         +-- out_of_scope --------------------------------------------------> synthesize -------------------------------+
+                                                                                                             end --> END
 ```
 
-- `rag_only` skips `plan`; `needs_calc` skips `retrieve`; `rag_plus_calc` runs
-  both. `calculate` is a no-op passthrough on routes that don't need it.
+- `rag_only` runs only `retrieve`; `needs_calc` runs only `calculate`;
+  `rag_plus_calc` fans `plan` out to **both, running concurrently**, and they
+  rejoin at `synthesize` (LangGraph superstep barrier).
 - `synthesize -> guardrails -> validate` is unconditional; `validate` either ends
-  or sends one retry back to `retrieve`.
+  or sends one retry back to `retrieve` alone (the calc result is deterministic
+  and persists in state).
 
 Compiled node set (verified): `triage, plan, retrieve, calculate, synthesize,
 guardrails, validate` (plus `__start__` / `__end__`).
 
-**Decomposition.** A compound question like "how much do I owe on $85k, single?"
-is broken into subtasks that run as separate nodes with their own state slices:
-*look up the governing rule* (`retrieve` → RAG subgraph), *compute the tax*
-(`calculate` off the extracted `tax_profile`), *compose a cited answer*
-(`synthesize`). `triage` picks which subset a given question needs. `retrieve`
-and `calculate` share no inputs, so on `rag_plus_calc` they are independent and
-could run in parallel — kept sequential here for a readable trace (see
-*Concurrency* for the async fan-out design). The RAG subgraph decomposes again
-one level down, expanding the question into several targeted sub-queries.
+**Decomposition into subtasks and independent execution.** A compound question
+like "what's my tax after the standard deduction on $85k, single?" is broken
+into subtasks that run as separate nodes with their own state slices: *look up
+the governing rule* (`retrieve` → RAG subgraph, keyed on the question), *compute
+the tax* (`calculate`, keyed on the `tax_profile` `plan` extracts), *compose a
+cited answer* (`synthesize`). `triage` selects which subset a question needs. On
+`rag_plus_calc` the two subtasks share no inputs, so `plan`'s conditional edge
+returns `["retrieve", "calculate"]` — LangGraph dispatches both in one superstep
+and they execute independently, then `synthesize` runs once both have landed
+(`route_after_plan` in `app/graph/nodes/plan.py`; `test_graph_end_to_end.py`
+asserts the fan-out). The wall-clock win is marginal here — `calculate` is a
+sub-millisecond deterministic call — so the value is architectural: a real
+parallel branch with a fan-in join. The RAG subgraph decomposes once more, one
+level down, expanding the question into several targeted sub-queries.
 
 - **triage** — LLM classifies the question into `rag_only` / `needs_calc` /
   `rag_plus_calc` / `out_of_scope` (autonomous routing).
 - **plan** — extracts a structured `tax_profile` (filing status, income,
   dependents, tax year) — the input the `calculate` subtask needs. Skipped on
   `rag_only` / `out_of_scope`.
-- **retrieve** — invokes the modular **RAG subgraph**. Tool #1 (retrieval).
-  Skipped on `needs_calc` / `out_of_scope`.
-- **calculate** — deterministic `estimate_tax(...)`. Tool #2 (non-retrieval);
-  a no-op passthrough on the `rag_only` / `out_of_scope` routes.
+- **retrieve** — invokes the modular **RAG subgraph**. Tool #1 (retrieval). Runs
+  on `rag_only` and (in parallel) `rag_plus_calc`.
+- **calculate** — deterministic `estimate_tax(...)`. Tool #2 (non-retrieval).
+  Runs on `needs_calc` and (in parallel) `rag_plus_calc`; a no-op if `plan`
+  produced no `tax_profile`.
 - **synthesize** — LLM composes a cited answer from context and/or calc result.
 - **guardrails** — deterministic, no model call: redacts SSNs, and flags
   citations to pages that were never retrieved and dollar amounts that trace to
   neither the calculator nor the retrieved context.
 - **validate** — checks citations, numeric consistency, and the guardrail
   findings; on failure it sends exactly one retry back to `retrieve`
-  (re-running retrieval -> calculate -> synthesize -> guardrails), then ends
-  regardless of the second result.
+  (re-running retrieve -> synthesize -> guardrails; `calculate` does not re-run,
+  its result persists in state), then ends regardless of the second result.
 
 Out of scope for this prototype (production would add them, likely as a
 dedicated pre/post model): input moderation, prompt-injection / jailbreak
@@ -101,10 +114,12 @@ expand_query --> retrieve_candidates --> rerank --> grade_docs --(loop: broaden 
 
 Compiled node set (verified): `expand_query, retrieve_candidates, rerank,
 grade_docs, assemble_context` (plus `__start__` / `__end__`). Each node is one
-named RAG subsystem: query expansion (LLM + deterministic domain hints),
+named RAG subsystem: query expansion (condenses a follow-up against chat history
+into a standalone question, then LLM rewrite + deterministic domain hints),
 candidate retrieval (dense + BM25 + RRF fusion), cross-encoder reranking (with
 a table-first boost for amount questions), relevance grading, and context
-assembly with citations.
+assembly with citations. The `candidates → reranked → kept` counts flow back to
+the API (`retrieval_funnel`) and show in the Streamlit trace panel.
 
 ### Tools
 

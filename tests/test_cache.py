@@ -68,5 +68,7 @@ def test_run_rag_second_call_is_cached(tmp_path, monkeypatch):
 
     a = sg.run_rag("what is the standard deduction?", [])
     b = sg.run_rag("What is the Standard Deduction?", [])   # same after normalize
-    assert a == b
+    assert a["rag_context"] == b["rag_context"]
+    assert a["citations"] == b["citations"]
+    assert b["funnel"]["cached"] is True
     assert cache._rag_cache.hits == 1

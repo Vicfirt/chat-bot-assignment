@@ -4,7 +4,7 @@ from langgraph.graph import END, StateGraph
 
 from app.graph.nodes.calculate import calculate
 from app.graph.nodes.guardrails import guardrails
-from app.graph.nodes.plan import plan
+from app.graph.nodes.plan import plan, route_after_plan
 from app.graph.nodes.retrieve import retrieve
 from app.graph.nodes.synthesize import synthesize
 from app.graph.nodes.triage import route_after_triage, triage
@@ -31,11 +31,10 @@ def build_graph():
         "rag_plus_calc": "plan",
         "out_of_scope": "synthesize",
     })
-    g.add_conditional_edges("plan", lambda s: s["route"], {
-        "needs_calc": "calculate",
-        "rag_plus_calc": "retrieve",
-    })
-    g.add_edge("retrieve", "calculate")
+    # `rag_plus_calc` fans out into two independent subtasks; `needs_calc` runs
+    # only `calculate`. Both branches rejoin at `synthesize`.
+    g.add_conditional_edges("plan", route_after_plan, ["retrieve", "calculate"])
+    g.add_edge("retrieve", "synthesize")
     g.add_edge("calculate", "synthesize")
     g.add_edge("synthesize", "guardrails")
     g.add_edge("guardrails", "validate")

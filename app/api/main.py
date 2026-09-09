@@ -60,6 +60,7 @@ class ChatResponse(BaseModel):
     timings: dict
     low_confidence: bool
     guardrail: dict = Field(default_factory=dict)
+    retrieval_funnel: dict = Field(default_factory=dict)
 
 
 @app.get("/health")
@@ -110,6 +111,7 @@ def chat(req: ChatRequest) -> ChatResponse:
                  "per_node_ms": {s["node"]: s["duration_ms"] for s in steps}},
         low_confidence=low_conf,
         guardrail=state.get("guardrail", {}),
+        retrieval_funnel=state.get("retrieval_funnel", {}),
     )
 
 
@@ -159,6 +161,7 @@ def chat_stream(req: ChatRequest) -> StreamingResponse:
             "route": route,
             "low_confidence": low_conf,
             "guardrail": acc.get("guardrail", {}),
+            "retrieval_funnel": acc.get("retrieval_funnel", {}),
             "total_ms": total_ms,
         })
 

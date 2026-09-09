@@ -163,7 +163,7 @@ ingest/training redesign, or both:
 | Technique | Why not here / cheapest entry point |
 |---|---|
 | **Self-RAG / CRAG** — LLM relevance grader, reflection tokens | the `grade_docs` + `validate` loops are the deterministic version of this. A real LLM grader adds a call per retrieval round (against the "cut LLM calls" goal); reflection tokens need a fine-tuned model. Entry point: swap the `grade_docs` score threshold for a one-shot LLM relevance vote, behind a flag. |
-| **Contextual retrieval** — LLM writes a situating blurb per chunk before embedding | strong published lift on exactly our table-retrieval gap, but a one-time ~1.5k LLM calls with a model stronger than the 3B. The deterministic table-caption idea is the no-LLM approximation. |
+| **Contextual retrieval** — LLM writes a situating blurb per chunk before embedding | strong published lift on exactly our table-retrieval gap, but a one-time ~1.5k LLM calls with a model stronger than the 1b default. The deterministic table-caption idea is the no-LLM approximation. |
 | **Propositional chunking** — rewrite passages into atomic standalone statements | raises `context_precision` but loses the verbatim text, which fights the "quote the exact publication + page" requirement. |
 | **Hierarchical / small-to-big** — retrieve tight chunks, feed the LLM the enclosing section | the direct lever on `context_precision` (≈ 0.31); needs a parent-document store beside the chunk index. |
 | **RAPTOR** — recursive LLM-built summary tree | same ingest-cost class as contextual retrieval, for a corpus (~1.5k chunks) small enough that the payoff is marginal. |
@@ -208,12 +208,12 @@ metadata — `build_index` fails loudly if the count comes out far below that.
 - **Pluggable `ollama` / `dummy` LLM** — reconciles "real local model" with
   "reproducible and offline for graders". `dummy` is the default for tests,
   eval, and load tests.
-- **`llama3.2:3b` as the local model** — trade-off: it runs on ~4 GB RAM with no
-  GPU (fits a laptop / CI box), at the cost of ~3–4 min/answer on CPU and shakier
-  classification — the routing guard in `triage` exists to backstop that. An 8B
-  (llama3.1, qwen2.5) routes and writes better but needs more RAM and roughly
-  doubles latency on CPU; not worth it for a prototype whose answers are already
-  gated by a deterministic calculator and citation checks. Swap via `LLM_MODEL`.
+- **`llama3.2:1b` as the default local model** — the `1b`-vs-`3b` comparison
+  (*Model comparison* below) found identical functional and near-identical
+  retrieval scores for ~10× less latency (~32 s vs ~360 s per request on CPU),
+  because the deterministic guards and calculator carry correctness. `3b` writes
+  more fluent prose (not scored by our metrics); an 8B (llama3.1, qwen2.5) more
+  so, at more RAM and latency. Swap via `LLM_MODEL`; `1b` needs ~2 GB RAM.
 - **Deterministic calculator, never LLM arithmetic** — tax math must be exact
   and testable.
 
@@ -293,7 +293,7 @@ the calculator and the grounding checks keep the substance correct.
 
 **`needs_calc` (pure calculation, no retrieval)** is validated at the node level
 in `tests/test_graph_triage.py` rather than in this end-to-end set. The spec
-allows evaluating "a single node or the entire workflow", and with a real 3B the
+allows evaluating "a single node or the entire workflow", and with a real small model the
 label is unstable on calc questions that resemble the `rag_plus_calc` examples;
 the triage guard deliberately biases every dollar-amount question toward
 `rag_plus_calc` so the returned figure always carries a citation. The calculator
@@ -480,7 +480,7 @@ reproducible runs; `LLM_MODE=ollama` needs the model pulled first.
 
 ### Prerequisites
 
-Docker + Docker Compose. ~4 GB free RAM for the 3B model (not needed in
+Docker + Docker Compose. ~2 GB free RAM for the `1b` model (not needed in
 `dummy` mode).
 
 ### First run — reproducible / offline (recommended)
@@ -500,11 +500,12 @@ reproduce the test suite and the retrieval eval.
 ### With the real model (for actual answers)
 
 ```bash
-docker compose exec ollama ollama pull llama3.2:3b     # ~2 GB, one-time
+docker compose exec ollama ollama pull llama3.2:1b     # ~1.3 GB, one-time (model-pull does this too)
 make up                                                # LLM_MODE defaults to ollama
 ```
 
-Answers then depend on `llama3.2:3b` (non-deterministic, ~3–4 min/answer on CPU).
+Answers then depend on `llama3.2:1b` (non-deterministic, ~30 s/answer on CPU;
+`LLM_MODEL=llama3.2:3b` for better prose at ~10× the latency).
 
 ### Local (no Docker)
 
@@ -527,7 +528,7 @@ defaults is in `.env.example`. The ones you'd usually touch:
 | Var | Default | Meaning |
 |-----|---------|---------|
 | `LLM_MODE` | `ollama` | `ollama` (real model) or `dummy` (deterministic, offline) |
-| `LLM_MODEL` | `llama3.2:3b` | any Ollama tag; `llama3.2:1b` for speed |
+| `LLM_MODEL` | `llama3.2:1b` | any Ollama tag; `llama3.2:3b` for better prose (~10× latency) |
 | `OLLAMA_BASE_URL` | `http://ollama:11434` | Ollama endpoint |
 | `LLM_FALLBACK_DUMMY` | `true` | fall back to dummy if Ollama is unreachable instead of erroring |
 | `TAX_YEAR` | `2025` | calculator year + `tax_year` metadata filter on retrieval |
@@ -607,15 +608,16 @@ LLM_MODE=ollama LLM_MODEL=llama3.2:1b python -m loadtest.run_load \
 ## Known limitations
 
 - **The LLM is the ceiling on answer quality.** Prose answers are written by
-  `llama3.2:3b` — a small local model that can misread or over-generalise the
-  retrieved text and mis-state figures. Calc answers lead with the deterministic
-  tool's line so the number is never the model's; rule-lookup prose is guarded
-  only by the citation + grounding checks, not by a faithfulness judge. The model
-  knows nothing beyond the retrieved context — a stale index yields stale answers
-  with no signal that anything is wrong. Output is non-deterministic even at
-  `temperature 0.1`; `LLM_MODE=dummy` is reproducible but returns stub text, so
-  the offline path validates the *pipeline*, not answer quality. And it is slow:
-  ~3–4 min/answer on CPU (also the [main bottleneck](#main-bottleneck)).
+  `llama3.2:1b` by default — a small local model that can misread or
+  over-generalise the retrieved text and mis-state figures. Calc answers lead
+  with the deterministic tool's line so the number is never the model's;
+  rule-lookup prose is guarded only by the citation + grounding checks, not by a
+  faithfulness judge. The model knows nothing beyond the retrieved context — a
+  stale index yields stale answers with no signal that anything is wrong. Output
+  is non-deterministic even at `temperature 0.1`; `LLM_MODE=dummy` is
+  reproducible but returns stub text, so the offline path validates the
+  *pipeline*, not answer quality. And it is slow: ~30 s/answer on CPU with `1b`,
+  ~6 min with `3b` (also the [main bottleneck](#main-bottleneck)).
 - **Calculator.** `total_tax` is tax *before* credits; the headline figure
   (`tax_after_credits`) subtracts only a non-refundable Child Tax Credit. The
   income input is treated as **gross** — the tool subtracts the standard
@@ -623,11 +625,13 @@ LLM_MODE=ollama LLM_MODEL=llama3.2:1b python -m loadtest.run_load \
   deductions, no other credits, no state tax; tax years 2024–2025 only; every
   dependent is assumed a CTC-eligible qualifying child under 17.
 - **Retrieval.** Finds the right *publication* reliably (100% hit rate in the
-  functional eval) but page-level precision is ~0.31 — weak on table-heavy pages
-  (standard-deduction table, rate schedules). See *Retrieval quality*.
-- **Routing** tracks the local model. `llama3.2:3b` misfiles some calc questions;
-  the deterministic guard in `triage` backstops the common cases and `needs_calc`
-  is folded into `rag_plus_calc` by design.
+  functional eval); page-level `recall@5` is ~0.79 / `precision@5` ~0.41 after
+  the calc-aware fixes. Residual misses (q04, q12) land one page off the label.
+  See *Retrieval quality*.
+- **Routing** depends on the LLM label, but the deterministic guard in `triage`
+  overrides it for the money+calc and out-of-scope cases (both `1b` and `3b`
+  score 100% route accuracy on the eval); `needs_calc` is folded into
+  `rag_plus_calc` by design.
 - **Concurrency.** Retrieval is serialised by a process-wide lock (native
   thread-safety) — one retrieval at a time. No request cancellation: `/chat`
   runs to completion regardless of the client.

@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     llm_mode: Literal["ollama", "dummy"] = "ollama"
-    llm_model: str = "llama3.2:3b"
+    llm_model: str = "llama3.2:1b"
     ollama_base_url: str = "http://ollama:11434"
     # When llm_mode="ollama" but the model/server is unreachable, use the dummy LLM
     # instead of failing every request. Set false to surface the error hard.

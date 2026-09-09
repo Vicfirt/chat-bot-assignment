@@ -28,7 +28,7 @@ services:
         if [ "${LLM_MODE:-ollama}" = "dummy" ]; then
           echo "LLM_MODE=dummy - skipping model pull";
         else
-          ollama pull "${LLM_MODEL:-llama3.2:3b}" ||
+          ollama pull "${LLM_MODEL:-llama3.2:1b}" ||
           echo "model pull failed - API will fall back to the dummy LLM";
         fi
     restart: "no"
@@ -39,7 +39,7 @@ services:
     image: agentic-rag-tax-chatbot:latest
     environment:
       LLM_MODE: ${LLM_MODE:-ollama}
-      LLM_MODEL: ${LLM_MODEL:-llama3.2:3b}
+      LLM_MODEL: ${LLM_MODEL:-llama3.2:1b}
       OLLAMA_BASE_URL: http://ollama:11434
       CHROMA_DIR: /app/data/chroma
       RAW_PDF_DIR: /app/data/raw_pdfs
@@ -61,7 +61,7 @@ services:
     environment:
       API_URL: http://api:8000
       LLM_MODE: ${LLM_MODE:-ollama}
-      LLM_MODEL: ${LLM_MODEL:-llama3.2:3b}
+      LLM_MODEL: ${LLM_MODEL:-llama3.2:1b}
     ports:
       - "8501:8501"
     depends_on:

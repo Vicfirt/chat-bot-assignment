@@ -1,11 +1,10 @@
 # Agentic RAG Tax Chatbot
 
+[![CI](https://github.com/Vicfirt/chat-bot-assignment/actions/workflows/ci.yml/badge.svg)](https://github.com/Vicfirt/chat-bot-assignment/actions/workflows/ci.yml)
 ![python](https://img.shields.io/badge/python-3.11-blue)
 ![lint](https://img.shields.io/badge/lint-ruff-black)
 ![tests](https://img.shields.io/badge/tests-pytest-green)
 ![LLM](https://img.shields.io/badge/LLM-llama3.2%3A1b%20%7C%20dummy-orange)
-<!-- once pushed to GitHub with Actions enabled, add:
-![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg) -->
 
 An Agentic RAG chatbot (LangGraph) that answers U.S. federal individual income
 tax questions grounded in IRS publications (Pub. 17, 501, 505) and performs
@@ -98,8 +97,10 @@ flowchart LR
 ```
 
 A fuller, styled version of this schema — every node, the RAG subgraph, the data
-pipeline, and the measured numbers — is a standalone page at
-[`docs/system-design.html`](docs/system-design.html) (open in a browser).
+pipeline, and the measured numbers — is a standalone page:
+**[vicfirt.github.io/chat-bot-assignment/system-design.html](https://vicfirt.github.io/chat-bot-assignment/system-design.html)**
+(published from [`docs/system-design.html`](docs/system-design.html) by the Pages
+workflow; also opens directly in a browser).
 
 The UI calls `POST /chat/stream` (server-sent events): each **main-graph** node
 emits its `record_step` as it finishes, and the UI appends it to a live
@@ -293,7 +294,7 @@ eval/                 questions.yaml, run_eval.py, retrieval_metrics.py
 loadtest/run_load.py  async load generator + report writer
 observability/        Prometheus / Grafana / Loki / Promtail config
 docs/                 generated eval-results*.md/.json, loadtest-results*.md
-.github/workflows/    ci.yml — ruff lint + pytest on push/PR
+.github/workflows/    ci.yml (ruff lint + pytest on push/PR) · pages.yml (publish docs/ to GitHub Pages)
 Dockerfile · docker-compose.yml · pyproject.toml (ruff + pytest) · requirements.lock
 ```
 

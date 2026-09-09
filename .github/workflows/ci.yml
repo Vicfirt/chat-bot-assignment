@@ -9,8 +9,8 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - run: pipx install ruff==0.16.6
@@ -23,12 +23,13 @@ jobs:
       HF_HOME: ${{ github.workspace }}/.hf-cache
       SENTENCE_TRANSFORMERS_HOME: ${{ github.workspace }}/.hf-cache
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
           cache: pip
+          cache-dependency-path: requirements.lock
 
       # Cache the sentence-transformers / cross-encoder weights the retriever
       # tests load (~130 MB) so only the first run pays the download.
@@ -37,6 +38,6 @@ jobs:
           path: ${{ github.workspace }}/.hf-cache
           key: hf-${{ hashFiles('requirements.lock') }}
 
-      - run: pip install --no-cache-dir -r requirements.lock
+      - run: pip install -r requirements.lock
 
       - run: python -m pytest -q

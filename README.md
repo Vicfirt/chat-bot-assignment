@@ -262,11 +262,15 @@ Offline metrics in the `## Retrieval quality` section of the same file, judged a
 | `hit_rate_fused` → `hit_rate_reranked` | same, as a top-k hit rate | 0.79 → 0.79 (rerank reorders within top-5, doesn't add new pages) |
 
 Retrieval reliably finds the right *publication* (hit rate 100% in the
-functional eval) but page-level precision is mediocre — the weak spots are the
-table-heavy pages (standard-deduction table, rate schedules). Improving page
-recall (larger rerank pool, ±1-page label tolerance, better table chunking) is
-the main retrieval lever; the cross-encoder rerank already contributes a clear
-+0.13 MRR.
+functional eval) but page-level precision is mediocre. Tracing the R@k = 0 cases
+(q08, q10) shows the cause is **query understanding, not ranking**: a calc
+question phrased "how much do I owe on $85k, single?" needs the standard-
+deduction table and the rate schedule, but that wording matches neither — a
+number-only table has no natural-language surface, and no domain hint fires
+(q06, "brackets for a single filer", works precisely because its hint does). The
+cross-encoder rerank already adds a clean +0.13 MRR once the right chunks are in
+the pool. Fixes — calc-aware expansion, wider fusion pool, ±1-page tolerance,
+agentic/contextual chunking — are in [Further extensions](#further-extensions).
 
 ### Load test — [`docs/loadtest-results.md`](docs/loadtest-results.md)
 
@@ -554,5 +558,26 @@ Deliberately left out to keep the prototype lean; each is a bounded add-on:
   plus the step panel already cover request tracing, and it needs Postgres.
 - **Redis** for a shared response/retrieval cache across workers (the in-process
   LRUs become a fallback).
-- **Retrieval** — larger rerank pool + `R@10`, ±1-page label tolerance, better
-  table/heading chunking to lift page-level recall.
+- **Retrieval.** The weak spot (P@k ≈ 0.31) is calc questions: "how much do I owe
+  on $85k, single?" needs the standard-deduction table and the rate schedule, but
+  that phrasing points at neither — a bare number table has no natural-language
+  surface to match, and no domain hint fires. Bounded fixes, cheapest first:
+  - *Calc-aware expansion* — thread the `tax_profile` `plan` already extracts into
+    the RAG subgraph and add deterministic queries (`"{year} standard deduction
+    {status}"`, `"{year} tax rate schedule {status}"`). No new model calls;
+    targets the exact failures. **Highest value.**
+  - *Wider fusion pool* — `dense/bm25_top_k` and `rerank_top_n` 20 → 40
+    (`hit_rate_fused` is 0.79, so 21% of gold chunks never reach the reranker).
+  - *±1-page label tolerance* reported alongside strict, and `R@10`.
+  - *Agentic / contextual chunking* — an LLM writes a short situating blurb per
+    chunk before embedding ("This table gives the 2025 standard deduction by
+    filing status…"), so number-only tables become retrievable by plain-language
+    questions. Anthropic's *contextual retrieval* reports ~35–49% fewer failed
+    retrievals from exactly this. It's a one-time ingest cost (one call per chunk
+    × ~1.5k, needs a model stronger than the 3B) — no per-query latency — and the
+    deterministic table-caption idea is its no-LLM approximation. **Caveat for
+    this project:** the *propositional* variant (LLM rewrites passages into atomic
+    standalone statements) raises `context_precision` but loses the verbatim text,
+    which fights the "quote the exact publication + page" requirement; the
+    *prepend-and-keep-original* variant does not.
+  - *Larger embedding model* (`bge-base`, 768-d) — last, ~2× index + encode cost.

@@ -73,6 +73,28 @@ def test_table_boost_puts_tables_first_for_amount_queries(seeded, monkeypatch):
     assert hits and hits[0].block_type == "table"
 
 
+def test_amount_query_keeps_tables_the_cross_encoder_scores_negative(seeded, monkeypatch):
+    monkeypatch.setenv("RERANK_ENABLED", "true")
+    monkeypatch.setenv("BOOST_TABLES_FOR_AMOUNT_QUERIES", "true")
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+
+    class FakeCE:
+        # a prose-trained CE scores a bare number table well below zero
+        def predict(self, pairs):
+            return [-4.0 if "|" in t else 2.0 for _q, t in pairs]
+
+    seeded._reranker = FakeCE()
+    out = seeded.rerank("how much is the 2025 standard deduction?", [
+        _c("prose", "Some paragraph about the standard deduction rules."),
+        _c("tab", "Single | $15,750\nMFJ | $31,500", block_type="table"),
+    ], k=5)
+    get_settings.cache_clear()
+    # the table survives (would be dropped by the >= grade_min_score floor)
+    assert out[0].chunk_id == "tab"
+
+
 def test_rerank_reorders_by_cross_encoder(seeded, monkeypatch):
     monkeypatch.setenv("RERANK_ENABLED", "true")
     monkeypatch.setenv("BOOST_TABLES_FOR_AMOUNT_QUERIES", "false")

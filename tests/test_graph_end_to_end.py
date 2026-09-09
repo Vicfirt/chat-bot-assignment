@@ -72,7 +72,7 @@ def test_validate_failure_retries_retrieve_once(monkeypatch):
 
     calls = {"n": 0}
 
-    def flaky_tool(question, history):
+    def flaky_tool(question, history, tax_profile=None):
         calls["n"] += 1
         if calls["n"] == 1:                       # first pass: nothing found -> retry
             return {"rag_context": "", "citations": [], "funnel": {}}

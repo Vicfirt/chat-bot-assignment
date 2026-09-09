@@ -253,24 +253,25 @@ Offline metrics in the `## Retrieval quality` section of the same file, judged a
 `raw_hits` (post RRF fusion) → `reranked_hits` (post cross-encoder) →
 `graded_hits` (kept for the prompt).
 
-| Metric | Meaning | Committed run (k=5, 14 labelled Qs) |
+| Metric | Meaning | Pre-fix run (k=5, 14 labelled Qs, `LLM_MODE=ollama`) |
 |--------|---------|------|
 | `precision_at_k` / `recall_at_k` | of the reranked top-k (k = `search_k`) | 0.31 / 0.61 |
 | `mrr` | mean reciprocal rank of the first relevant page | 0.59 |
 | `context_precision` | fraction of the assembled context that is relevant | 0.31 |
 | `mrr_fused` → `mrr_reranked` (`rerank_mrr_lift`) | ranking gain the `rerank` node adds over pure RRF | 0.45 → 0.59 (**+0.13**) |
-| `hit_rate_fused` → `hit_rate_reranked` | same, as a top-k hit rate | 0.79 → 0.79 (rerank reorders within top-5, doesn't add new pages) |
+| `hit_rate_fused` → `hit_rate_reranked` | same, as a top-k hit rate | 0.79 → 0.79 |
 
-Retrieval reliably finds the right *publication* (hit rate 100% in the
-functional eval) but page-level precision is mediocre. Tracing the R@k = 0 cases
-(q08, q10) shows the cause is **query understanding, not ranking**: a calc
-question phrased "how much do I owe on $85k, single?" needs the standard-
-deduction table and the rate schedule, but that wording matches neither — a
-number-only table has no natural-language surface, and no domain hint fires
-(q06, "brackets for a single filer", works precisely because its hint does). The
-cross-encoder rerank already adds a clean +0.13 MRR once the right chunks are in
-the pool. Fixes — calc-aware expansion, wider fusion pool, ±1-page tolerance,
-agentic/contextual chunking — are in [Further extensions](#further-extensions).
+Tracing the R@k = 0 cases (q08, q10) showed the cause was **query understanding
+plus a rerank bug, not ranking order**: a calc question phrased "how much do I
+owe on $85k, single?" matches neither the standard-deduction table nor the rate
+schedule it needs (a number-only table has no prose surface, and no domain hint
+fired), and even when the right table *was* in the pool the `grade_min_score`
+floor dropped it because a prose-trained cross-encoder scores bare tables below
+zero. Both are now fixed (calc-aware expansion from the `tax_profile`; the
+table-boost runs before the floor on amount queries) — a dummy-mode trace has
+q08/q10 at R@5 1.0, MRR 1.0. The numbers in the table above refresh in the
+two-model pass. Details and what's still open: [Further
+extensions](#further-extensions).
 
 ### Load test — [`docs/loadtest-results.md`](docs/loadtest-results.md)
 
@@ -558,17 +559,25 @@ Deliberately left out to keep the prototype lean; each is a bounded add-on:
   plus the step panel already cover request tracing, and it needs Postgres.
 - **Redis** for a shared response/retrieval cache across workers (the in-process
   LRUs become a fallback).
-- **Retrieval.** The weak spot (P@k ≈ 0.31) is calc questions: "how much do I owe
-  on $85k, single?" needs the standard-deduction table and the rate schedule, but
-  that phrasing points at neither — a bare number table has no natural-language
-  surface to match, and no domain hint fires. Bounded fixes, cheapest first:
-  - *Calc-aware expansion* — thread the `tax_profile` `plan` already extracts into
-    the RAG subgraph and add deterministic queries (`"{year} standard deduction
-    {status}"`, `"{year} tax rate schedule {status}"`). No new model calls;
-    targets the exact failures. **Highest value.**
-  - *Wider fusion pool* — `dense/bm25_top_k` and `rerank_top_n` 20 → 40
-    (`hit_rate_fused` is 0.79, so 21% of gold chunks never reach the reranker).
-  - *±1-page label tolerance* reported alongside strict, and `R@10`.
+- **Retrieval.** The weak spot was calc questions: "how much do I owe on $85k,
+  single?" needs the standard-deduction table and the rate schedule, but that
+  phrasing points at neither. **Done** (measurement refreshes in the two-model
+  pass; dummy-mode trace shows q08/q10 going R@5 0.0 → 1.0):
+  - *Calc-aware expansion* — `plan`'s `tax_profile` is threaded into the RAG
+    subgraph; on the calc routes `expand_query` adds deterministic
+    `"{year} standard deduction {status}"` / `"{year} tax rate schedule {status}"`
+    queries. No new model calls.
+  - *Rerank vs. table floor* — a prose-trained cross-encoder scores bare number
+    tables below zero, so the `grade_min_score` floor was dropping them before
+    the table-boost could run. For amount queries the boost now reorders the
+    full reranked pool and skips the floor.
+  - *Wider fusion pool* — `dense/bm25_top_k` and `rerank_top_n` 20 → 40.
+  - *±1-page label tolerance* — reported alongside strict
+    (`recall_at_k_tol1`, `mrr_tol1`).
+
+  Still open:
+  - *`R@10`*, and better labels for the residual misses (q04, q12 land on pages
+    adjacent to the gold ones).
   - *Agentic / contextual chunking* — an LLM writes a short situating blurb per
     chunk before embedding ("This table gives the 2025 standard deduction by
     filing status…"), so number-only tables become retrievable by plain-language

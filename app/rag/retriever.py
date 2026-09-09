@@ -197,9 +197,12 @@ class HybridRetriever:
             self._reranker = CrossEncoder(get_settings().rerank_model)
         return self._reranker
 
+    def _is_amount_query(self, question: str) -> bool:
+        return bool(get_settings().boost_tables_for_amount_queries
+                    and _AMOUNT_RE.search(question))
+
     def _boost_tables(self, question: str, chunks: list[Chunk]) -> list[Chunk]:
-        s = get_settings()
-        if not (s.boost_tables_for_amount_queries and _AMOUNT_RE.search(question)):
+        if not self._is_amount_query(question):
             return chunks
         tables = [c for c in chunks if c.block_type == "table"]
         rest = [c for c in chunks if c.block_type != "table"]
@@ -218,8 +221,14 @@ class HybridRetriever:
                     (replace(c, score=float(sc)) for c, sc in zip(pool, raw)),
                     key=lambda c: c.score, reverse=True,
                 )
+                # For amount/rate questions the answer is a number table, which a
+                # prose-trained cross-encoder scores below zero — so boost tables
+                # to the front of the *full* reranked pool and skip the score
+                # floor, which would otherwise drop them.
+                if self._is_amount_query(question):
+                    return self._boost_tables(question, rescored)[:k]
                 kept = [c for c in rescored if c.score >= s.grade_min_score]
-                return self._boost_tables(question, kept)[:k]
+                return kept[:k]
             except Exception as e:  # noqa: BLE001 - degrade to fused order, don't 500
                 _log.warning("reranker unavailable (%s); using fused order", e)
         ranked = sorted(chunks, key=lambda c: c.score, reverse=True)

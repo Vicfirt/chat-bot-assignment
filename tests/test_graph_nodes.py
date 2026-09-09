@@ -24,7 +24,7 @@ def test_retrieve_populates_context(monkeypatch):
     import app.graph.nodes.retrieve as rn
 
     monkeypatch.setattr(rn, "retriever_tool",
-                        lambda q, h: {"rag_context": "CTX", "citations": [{"pub": "Pub. 17"}]})
+                        lambda q, h, p=None: {"rag_context": "CTX", "citations": [{"pub": "Pub. 17"}]})
     out = retrieve({"question": "q", "chat_history": []})
     assert out["rag_context"] == "CTX"
     assert out["citations"][0]["pub"] == "Pub. 17"

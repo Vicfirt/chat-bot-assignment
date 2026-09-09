@@ -2,10 +2,33 @@ from __future__ import annotations
 
 import re
 
+from app.config import get_settings
 from app.llm.provider import get_llm
 from app.rag.state import RagState
 
 _SYS = "Rewrite the user's tax question into short standalone search queries, one per line."
+
+_STATUS_PHRASE = {
+    "single": "single",
+    "married_joint": "married filing jointly",
+    "married_separate": "married filing separately",
+    "head_of_household": "head of household",
+}
+
+
+def _profile_queries(profile: dict | None) -> list[str]:
+    """Deterministic queries built from the extracted tax profile. A calc
+    question ("how much do I owe on $85k, single?") needs the standard-deduction
+    table and the rate schedule, but that phrasing matches neither — so name
+    them explicitly instead of hoping the LLM rewrite does."""
+    if not profile:
+        return []
+    year = profile.get("tax_year") or get_settings().tax_year
+    status = _STATUS_PHRASE.get(profile.get("filing_status", ""), "")
+    return [
+        f"{year} standard deduction amount {status}".strip(),
+        f"{year} tax rate schedule {status} Schedule X Y Z".strip(),
+    ]
 _CONDENSE_SYS = (
     "Given the recent conversation and a follow-up question, rewrite the follow-up "
     "as a single standalone question that needs no prior context. Reply with the "
@@ -51,17 +74,25 @@ def expand_query(state: RagState) -> dict:
     raw_question = state["question"]
     question = _standalone_question(raw_question, state.get("chat_history", []))
     rounds = state.get("rounds", 0) + 1
+
     queries = [question]
+    for q in _profile_queries(state.get("tax_profile")):
+        if q and q not in queries:
+            queries.append(q)
+
     try:
         raw = get_llm().complete(f"Question: {question}", system=_SYS, max_tokens=96)
         for line in raw.splitlines():
             line = line.strip("-* \t")
-            if line and line.lower() != question.lower() and len(queries) < 3:
+            if (line and not line.startswith("[dummy]")
+                    and line.lower() != question.lower()
+                    and line not in queries and len(queries) < 5):
                 queries.append(line)
     except Exception:  # noqa: BLE001 - retrieval must not crash on LLM failure
         pass
+
     for pat, hint in _DOMAIN_HINTS:
-        if len(queries) >= 5:
+        if len(queries) >= 6:
             break
         if pat.search(question) and hint not in queries:
             queries.append(hint)

@@ -20,6 +20,16 @@ def test_precision_and_recall_at_k():
     assert recall_at_k(hits, GOLD, 1) == 0.5
 
 
+def test_page_tolerance_counts_adjacent_pages():
+    hits = [_h("Pub. 17", 96), _h("Pub. 17", 128)]   # neighbours of gold 97 / 127
+    assert recall_at_k(hits, GOLD, 2, tol=0) == 0.0
+    assert recall_at_k(hits, GOLD, 2, tol=1) == 1.0
+    assert reciprocal_rank(hits, GOLD, tol=1) == 1.0
+    assert precision_at_k(hits, GOLD, 2, tol=1) == 1.0
+    # different pub is never a tolerant hit
+    assert reciprocal_rank([_h("Pub. 501", 97)], GOLD, tol=1) == 0.0
+
+
 def test_mrr_uses_first_relevant_rank():
     hits = [_h("Pub. 501", 3), _h("Pub. 17", 97)]
     assert reciprocal_rank(hits, GOLD) == 0.5
@@ -42,7 +52,7 @@ def test_evaluate_retrieval_reports_rerank_lift(monkeypatch):
             "graded_hits": [_h("Pub. 17", 97), _h("Pub. 501", 3)],
         }
     }
-    monkeypatch.setattr(m, "_run_subgraph", lambda q: states["q"])
+    monkeypatch.setattr(m, "_run_subgraph", lambda q, profile=None: states["q"])
     items = [{"id": "t1", "question": "q", "relevant_pages": [{"pub": "Pub. 17", "page": 97}]}]
     out = evaluate_retrieval(items, k=5)
     agg = out["aggregate"]

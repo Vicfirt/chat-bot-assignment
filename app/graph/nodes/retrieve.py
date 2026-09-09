@@ -8,7 +8,8 @@ from app.tools.retriever_tool import retriever_tool
 
 def retrieve(state: dict) -> dict:
     start = time.perf_counter()
-    result = retriever_tool(state["question"], state.get("chat_history", []))
+    result = retriever_tool(state["question"], state.get("chat_history", []),
+                            state.get("tax_profile"))
     citations = result.get("citations", [])
     funnel = result.get("funnel", {})
     n = len(citations)

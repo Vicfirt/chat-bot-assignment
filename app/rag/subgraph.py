@@ -48,7 +48,8 @@ def build_rag_subgraph():
     return g.compile()
 
 
-def run_rag(question: str, chat_history: list[dict]) -> dict:
+def run_rag(question: str, chat_history: list[dict],
+            tax_profile: dict | None = None) -> dict:
     global _compiled
     from app.observability.logging import log_event
     from app.observability.metrics import record_cache
@@ -56,7 +57,8 @@ def run_rag(question: str, chat_history: list[dict]) -> dict:
 
     # The cache keys on the normalised question only, so it is unsafe once a
     # follow-up is resolved against conversation history (expand_query does
-    # that) — bypass it whenever there is history.
+    # that) — bypass it whenever there is history. `tax_profile` is a pure
+    # function of the question, so it needs no key of its own.
     cacheable = cache.enabled() and not chat_history
     key = (cache.normalize_question(question), cache.index_fingerprint())
     if cacheable:
@@ -71,7 +73,8 @@ def run_rag(question: str, chat_history: list[dict]) -> dict:
     if _compiled is None:
         _compiled = build_rag_subgraph()
     final = _compiled.invoke(
-        {"question": question, "chat_history": chat_history, "rounds": 0}
+        {"question": question, "chat_history": chat_history,
+         "tax_profile": tax_profile, "rounds": 0}
     )
     out = {
         "rag_context": final.get("rag_context", ""),

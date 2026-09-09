@@ -33,12 +33,12 @@ class Settings(BaseSettings):
 
     # --- retrieval (all tunable) ---
     retrieval_mode: Literal["hybrid", "dense", "bm25"] = "hybrid"
-    dense_top_k: int = 20                     # candidates from the vector store
-    bm25_top_k: int = 20                      # candidates from the keyword index
+    dense_top_k: int = 40                     # candidates from the vector store
+    bm25_top_k: int = 40                      # candidates from the keyword index
     rrf_k: int = 60                           # reciprocal-rank-fusion constant
     rerank_enabled: bool = True
     rerank_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
-    rerank_top_n: int = 20                    # candidates fed to the cross-encoder
+    rerank_top_n: int = 40                    # candidates fed to the cross-encoder
     filter_tax_year: bool = True             # restrict dense search to settings.tax_year
     boost_tables_for_amount_queries: bool = True
     grade_min_score: float = 0.0             # drop candidates below this final score

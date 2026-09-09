@@ -107,19 +107,29 @@ Both artifacts below are generated, not hand-written:
 ### Functional evaluation — `docs/eval-results.md` (+ `.json`)
 
 16 questions spanning all four routes. `run_eval` writes both a markdown table
-and a machine-readable `docs/eval-results.json`.
+and a machine-readable `docs/eval-results.json`. Numbers below are the committed
+run under `LLM_MODE=ollama` / `llama3.2:3b`.
 
-| Metric | `ollama` / `llama3.2:3b` |
-|--------|--------|
-| Route accuracy | see `docs/eval-results.md` |
-| Retrieval hit rate (cited pub matches expected) | " |
-| Citation rate | " |
-| Numeric accuracy (calc questions) | " |
-| Keyword hit rate (brittle substring proxy) | " |
+| Metric | Result | Note |
+|--------|--------|------|
+| Route accuracy | 93.8% (15/16) | only miss is q16 (see below) |
+| Retrieval hit rate (cited pub matches expected) | 100% | |
+| Citation rate | 100% | |
+| Numeric accuracy (calc questions) | 75% (3/4) | the miss is q16's route, not the arithmetic |
+| Keyword hit rate | 56.2% | brittle substring proxy vs. 3B phrasing; low signal |
 
-Route accuracy and `tax_profile` extraction depend on the LLM, so run under
-`LLM_MODE=ollama`; retrieval hit rate and citation rate are largely independent
-of generation quality.
+Route accuracy and `tax_profile` extraction depend on the LLM, so this runs
+under `LLM_MODE=ollama`; retrieval hit rate and citation rate are largely
+independent of generation quality.
+
+**Known limitation — q16.** q16 ("compute the tax on $50k, single…") is labelled
+`needs_calc` but the 3B routes it `rag_plus_calc`. It is near-identical to q08
+("how much tax do I owe on $85k, single…"), which *is* `rag_plus_calc`, and the
+deterministic triage guard already forces every dollar-amount calc question onto
+`rag_plus_calc` — so `needs_calc` is barely reachable by design. The calculator
+itself is correct on the q16 inputs (`tests/test_tax_calculator.py`); the failure
+is purely the routing label. Kept as a documented small-model routing limitation
+rather than tuned away.
 
 ### Retrieval quality — `## Retrieval quality` section of the same file
 
@@ -128,13 +138,20 @@ in `eval/questions.yaml`, by invoking the RAG subgraph directly and reading its
 `raw_hits` (post RRF fusion) → `reranked_hits` (post cross-encoder) →
 `graded_hits` (kept for the prompt).
 
-| Metric | Meaning |
-|--------|---------|
-| `precision_at_k`, `recall_at_k` | of the reranked top-k (k = `search_k`) |
-| `mrr` | mean reciprocal rank of the first relevant page |
-| `context_precision` | fraction of the assembled context that is relevant |
-| `mrr_fused` vs `mrr_reranked`, `rerank_mrr_lift` | the ranking gain the `rerank` node adds over pure RRF |
-| `hit_rate_fused` vs `hit_rate_reranked`, `rerank_hit_lift` | same, as a top-k hit rate |
+| Metric | Meaning | Committed run (k=5, 14 labelled Qs) |
+|--------|---------|------|
+| `precision_at_k` / `recall_at_k` | of the reranked top-k (k = `search_k`) | 0.31 / 0.61 |
+| `mrr` | mean reciprocal rank of the first relevant page | 0.59 |
+| `context_precision` | fraction of the assembled context that is relevant | 0.31 |
+| `mrr_fused` → `mrr_reranked` (`rerank_mrr_lift`) | ranking gain the `rerank` node adds over pure RRF | 0.45 → 0.59 (**+0.13**) |
+| `hit_rate_fused` → `hit_rate_reranked` | same, as a top-k hit rate | 0.79 → 0.79 (rerank reorders within top-5, doesn't add new pages) |
+
+Retrieval reliably finds the right *publication* (hit rate 100% in the
+functional eval) but page-level precision is mediocre — the weak spots are the
+table-heavy pages (standard-deduction table, rate schedules). Improving page
+recall (larger rerank pool, ±1-page label tolerance, better table chunking) is
+the main retrieval lever; the cross-encoder rerank already contributes a clear
++0.13 MRR.
 
 ### Load test — `docs/loadtest-results.md`
 

@@ -44,10 +44,6 @@ services:
       OLLAMA_BASE_URL: http://ollama:11434
       CHROMA_DIR: /app/data/chroma
       RAW_PDF_DIR: /app/data/raw_pdfs
-      LANGFUSE_ENABLED: ${LANGFUSE_ENABLED:-false}
-      LANGFUSE_HOST: http://langfuse-web:3000
-      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-000}
-      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-000}
     volumes:
       - ./data:/app/data
     ports:
@@ -85,35 +81,6 @@ services:
       RAW_PDF_DIR: /app/data/raw_pdfs
     volumes:
       - ./data:/app/data
-
-  langfuse-db:
-    image: postgres:16
-    profiles: ["observability"]
-    environment:
-      POSTGRES_USER: langfuse
-      POSTGRES_PASSWORD: langfuse
-      POSTGRES_DB: langfuse
-    volumes:
-      - langfuse_pg:/var/lib/postgresql/data
-
-  langfuse-web:
-    image: langfuse/langfuse:2
-    profiles: ["observability"]
-    environment:
-      DATABASE_URL: postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
-      NEXTAUTH_SECRET: dev-secret
-      SALT: dev-salt
-      NEXTAUTH_URL: http://localhost:3000
-      LANGFUSE_INIT_ORG_ID: demo
-      LANGFUSE_INIT_PROJECT_ID: demo
-      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-000}
-      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-000}
-      LANGFUSE_INIT_USER_EMAIL: dev@example.com
-      LANGFUSE_INIT_USER_PASSWORD: dev-password
-    ports:
-      - "3000:3000"
-    depends_on:
-      - langfuse-db
 
   pushgateway:
     image: prom/pushgateway:v1.9.0
@@ -174,7 +141,6 @@ services:
 
 volumes:
   ollama_models:
-  langfuse_pg:
   prometheus_data:
   grafana_data:
   loki_data:

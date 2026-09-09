@@ -8,7 +8,6 @@ from app.observability.metrics import (
     time_llm_call,
     time_subgraph_node,
 )
-from app.observability.tracing import get_langfuse_callbacks
 
 
 def test_record_steps_and_request_do_not_raise():
@@ -29,11 +28,3 @@ def test_timers_record_samples():
     with time_subgraph_node("rerank"):
         pass
     assert SUBGRAPH_NODE_DURATION.labels(node="rerank")._sum.get() >= 0
-
-
-def test_langfuse_disabled_returns_empty(monkeypatch):
-    monkeypatch.setenv("LANGFUSE_ENABLED", "false")
-    from app.config import get_settings
-
-    get_settings.cache_clear()
-    assert get_langfuse_callbacks() == []

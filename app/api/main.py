@@ -18,7 +18,6 @@ from app.observability.metrics import (
     record_request,
     record_steps,
 )
-from app.observability.tracing import get_langfuse_callbacks
 
 configure_logging()
 app = FastAPI(title="Agentic RAG Tax Chatbot")
@@ -57,7 +56,7 @@ def chat(req: ChatRequest) -> ChatResponse:
     history = [m.model_dump() for m in req.chat_history]
     log_event("api", "request.received", question=req.question, history_len=len(history))
     try:
-        state = run_agent(req.question, history, callbacks=get_langfuse_callbacks())
+        state = run_agent(req.question, history)
     except Exception as e:  # noqa: BLE001
         record_request("unknown", "error", time.perf_counter() - start)
         log_event("api", "request.failed", error=str(e), level=logging.ERROR)
@@ -106,8 +105,7 @@ def chat_stream(req: ChatRequest) -> StreamingResponse:
     def gen():
         acc: dict = {}
         try:
-            for chunk in run_agent_stream(req.question, history,
-                                          callbacks=get_langfuse_callbacks()):
+            for chunk in run_agent_stream(req.question, history):
                 for _node, delta in chunk.items():
                     for s in delta.get("steps", []):
                         record_steps([s])

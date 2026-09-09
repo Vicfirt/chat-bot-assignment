@@ -57,11 +57,6 @@ class Settings(BaseSettings):
     log_json: bool = True                     # structured JSON lines to stdout
     log_pii: bool = False                     # if false, redact SSNs before logging
 
-    langfuse_enabled: bool = False
-    langfuse_host: str = "http://langfuse-web:3000"
-    langfuse_public_key: str = ""
-    langfuse_secret_key: str = ""
-
     api_url: str = "http://api:8000"
 
 

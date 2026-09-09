@@ -219,24 +219,28 @@ reproducible runs; `LLM_MODE=ollama` needs the model pulled first.
 Docker + Docker Compose. ~4 GB free RAM for the 3B model (not needed in
 `dummy` mode).
 
-### First run (Docker)
+### First run — reproducible / offline (recommended)
 
 ```bash
 cp .env.example .env
-make ingest                                            # build the vector index (needs internet)
-docker compose exec ollama ollama pull llama3.2:3b     # or set LLM_MODE=dummy in .env
-docker compose up --build                              # UI on :8501, API on :8000
+make ingest                                            # build the vector index (one-time, needs internet)
+LLM_MODE=dummy make up                                 # UI :8501, API :8000 — deterministic stub LLM
 ```
 
 `make ingest` downloads IRS Pub. 17 / 501 / 505 and builds the embedded Chroma
 index under `data/chroma/`. It needs internet once; the SHA-256 of each PDF is
-pinned in `app/ingest/sources.yaml`.
+pinned in `app/ingest/sources.yaml`. After that the stack runs fully offline,
+and `LLM_MODE=dummy` makes every answer deterministic — this is the path to
+reproduce the test suite and the retrieval eval.
 
-### Dummy mode (no model download, fully offline)
+### With the real model (for actual answers)
 
 ```bash
-LLM_MODE=dummy docker compose up --build api ui
+docker compose exec ollama ollama pull llama3.2:3b     # ~2 GB, one-time
+make up                                                # LLM_MODE defaults to ollama
 ```
+
+Answers then depend on `llama3.2:3b` (non-deterministic, ~3–4 min/answer on CPU).
 
 ### Local (no Docker)
 
@@ -249,10 +253,13 @@ LLM_MODE=dummy streamlit run app/ui/streamlit_app.py   # separate shell
 
 ### Observability (optional)
 
+The core stack (`make up` / `docker compose up`) is just `ollama`, `api`, `ui`.
+The monitoring stack is a separate compose profile — nothing in the app path
+depends on it:
+
 ```bash
-docker compose --profile observability up --build
-# Grafana http://localhost:3001 (anon)  |  Prometheus :9090  |  Loki :3100
-# Pushgateway :9091  |  Langfuse :3000 (set LANGFUSE_ENABLED=true in .env)
+make up-obs      # docker compose --profile observability up --build
+# Grafana http://localhost:3001 (anon)  |  Prometheus :9090  |  Loki :3100  |  Pushgateway :9091
 ```
 
 The API exposes Prometheus metrics at `/metrics`; the provisioned Grafana
@@ -302,3 +309,21 @@ LLM_MODE=dummy python -m eval.run_eval                  # writes docs/eval-resul
 LLM_MODE=dummy python -m loadtest.run_load --api-url http://localhost:8000 --n 100 --concurrency 1
 # API must be running; see the concurrency caveat above before raising --concurrency
 ```
+
+## Further extensions
+
+Deliberately left out to keep the prototype lean; each is a bounded add-on:
+
+- **Concurrency** — async `/chat`, per-worker Chroma client (or an out-of-process
+  retrieval service), multi-worker uvicorn. This is the top reliability item.
+- **Request cancellation** — a cancel endpoint that trips a flag checked between
+  nodes / aborts the Ollama call; depends on the async rework above.
+- **Langfuse** (LLM trace tree) — `run_agent` / `run_agent_stream` already take a
+  `callbacks` list threaded into `_compiled.invoke(config={"callbacks": …})`.
+  Add `langfuse`, wire a `CallbackHandler`, and run its Postgres-backed stack in
+  its own compose profile. Dropped here because Loki (`| json | request_id=…`)
+  plus the step panel already cover request tracing, and it needs Postgres.
+- **Redis** for a shared response/retrieval cache across workers (the in-process
+  LRUs become a fallback).
+- **Retrieval** — larger rerank pool + `R@10`, ±1-page label tolerance, better
+  table/heading chunking to lift page-level recall.

@@ -45,7 +45,7 @@ def percentiles(latencies_ms: list[float]) -> dict:
 
 async def run_load(api_url: str, n: int = 100, concurrency: int = 4,
                    warmup: int = 0, timeout: float = 240,
-                   mode: str = "?") -> dict:
+                   mode: str = "?", model: str = "the local model") -> dict:
     sem = asyncio.Semaphore(concurrency)
     latencies: list[float] = []
     node_times: dict[str, list[float]] = {}
@@ -73,7 +73,7 @@ async def run_load(api_url: str, n: int = 100, concurrency: int = 4,
 
     return {
         "n": n, "concurrency": concurrency, "errors": errors, "warmup": warmup,
-        "mode": mode,
+        "mode": mode, "model": model,
         "throughput_rps": round((n - errors) / wall, 2) if wall else 0.0,
         "latency_ms": percentiles(latencies) if latencies else {},   # excludes warmup
         "per_node_ms": {k: round(statistics.fmean(v), 1) for k, v in node_times.items()},
@@ -91,11 +91,14 @@ def write_report(result: dict, out_md: str = "docs/loadtest-results.md",
     ranked = sorted(per_node.items(), key=lambda x: -x[1])
     top = ranked[0] if ranked else ("unknown", 0.0)
     mode = result.get("mode", "?")
+    model = result.get("model", "the local model")
+    retr_ms = per_node.get("retrieve", 0.0)
     lines = [
         "# Load Test Results", "",
-        f"- Mode: `LLM_MODE={mode}`  |  Requests: {result['n']}  |  "
-        f"Concurrency: {result['concurrency']}  |  Errors: {result['errors']}  |  "
-        f"Warmup discarded: {result.get('warmup', 0)}",
+        f"- `LLM_MODE={mode}`"
+        + (f" / `{model}`" if mode == "ollama" and model != "the local model" else "")
+        + f"  |  Requests: {result['n']}  |  Concurrency: {result['concurrency']}"
+        f"  |  Errors: {result['errors']}  |  Warmup discarded: {result.get('warmup', 0)}",
         f"- Throughput: {result['throughput_rps']} req/s", "",
         "## Latency (ms)"
         + (f" — first {result['warmup']} requests excluded" if result.get("warmup") else ""),
@@ -111,30 +114,30 @@ def write_report(result: dict, out_md: str = "docs/loadtest-results.md",
            if any(v >= 1 for _, v in ranked[1:]) else "; every other node is ~0 ms")
         + ".",
         "",
-        "In `LLM_MODE=ollama` `synthesize` (the ~400-token cited answer, generated "
-        "on CPU) is the whole request — ~90% of wall-clock even on `llama3.2:1b`. "
-        "`triage` and `expand_query` (the RAG subgraph's own LLM call, counted "
-        "under `retrieve`) are a few seconds each *when run serially*; under "
-        "concurrency > 1 their measured time inflates because each call queues "
-        "behind other requests' `synthesize` on the single CPU model. The "
+        "In `LLM_MODE=ollama` the request is LLM generation on CPU. `synthesize` "
+        "(the ~400-token cited answer) is the largest single node; `retrieve` "
+        f"here is {retr_ms:.0f} ms because it includes the RAG subgraph's own "
+        "`expand_query` LLM rewrite, and `triage` is a third LLM call. Their "
+        "relative weight shifts with model size — a small model makes them a few "
+        "seconds each, a larger one makes `expand_query` alone minutes. The "
         "deterministic nodes (`plan`, `calculate`, `guardrails`, `validate`) are "
         "~0 ms. In `LLM_MODE=dummy` the LLM nodes collapse to ~0 ms and `retrieve` "
         "(vector search + rerank, lock-serialised) is all that is left — that run "
         "isolates the retrieval path.",
         "", "## Optimization recommendations", "",
-        "1. **Attack `synthesize`.** It is ~90% of the request. (a) An "
-        "**end-to-end response cache** keyed on the normalised question, checked "
-        "before the graph — *implemented* in `app/api/main.py`: a repeat `/chat` "
-        "returns in ~1 ms instead of tens of seconds. (b) **Token streaming** "
-        "from `synthesize` — the `/chat/stream` SSE plumbing already carries step "
-        "events; extending it to model tokens would drop time-to-first-token to "
-        "~1-2 s while the full answer still takes ~30 s. Not done.",
-        "2. **Collapse the classification calls.** `triage` and `expand_query` are "
-        "~20-25% of a serial request (measured: ~3 s + ~5 s on `llama3.2:1b`) and "
-        "can be embeddings/rules-only — the deterministic guard in `triage` "
-        "already overrides the model for the common cases, and `expand_query`'s "
-        "rewrite buys little over the domain-hint + `tax_profile` queries. Bonus: "
-        "routing becomes deterministic.",
+        "1. **Attack `synthesize`.** (a) An **end-to-end response cache** keyed on "
+        "the normalised question, checked before the graph — *implemented* in "
+        "`app/api/main.py`: a repeat `/chat` returns in ~1 ms instead of tens of "
+        "seconds to minutes. (b) **Token streaming** from `synthesize` — the "
+        "`/chat/stream` SSE plumbing already carries step events; extending it to "
+        "model tokens would drop time-to-first-token to ~1-2 s. Not done.",
+        "2. **Make `triage` and `expand_query` rules/embeddings-only.** They are "
+        f"two more LLM round-trips ({100 * (retr_ms + per_node.get('triage', 0)) / max(1, sum(per_node.values())):.0f}% "
+        "of this run). The deterministic guard in `triage` already overrides the "
+        "model for the common cases, and `expand_query`'s rewrite buys little over "
+        "the domain-hint + `tax_profile` queries. Bonus: routing becomes "
+        "deterministic. This is the largest saving on a bigger model, where "
+        "`expand_query` alone runs into minutes.",
         "", "## Note on the tail", "",
         "- Retrieval is serialised by one process-wide lock (see README "
         "\"concurrency\"). Under `ollama` with concurrency > 1 the single CPU model "
@@ -171,7 +174,8 @@ def main() -> None:
     ap.add_argument("--out-png", default="docs/loadtest-latency.png")
     args = ap.parse_args()
     result = asyncio.run(run_load(args.api_url, args.n, args.concurrency, args.warmup,
-                                  args.timeout, mode=os.environ.get("LLM_MODE", "?")))
+                                  args.timeout, mode=os.environ.get("LLM_MODE", "?"),
+                                  model=os.environ.get("LLM_MODEL", "the local model")))
     write_report(result, args.out_md, args.out_png)
     print(result)
 

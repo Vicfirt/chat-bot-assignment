@@ -120,4 +120,12 @@ def _push_to_gateway(functional: dict, retrieval: dict) -> None:
 
 
 if __name__ == "__main__":
-    print(run_eval())
+    import argparse
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--questions", default="eval/questions.yaml")
+    ap.add_argument("--out", default="docs/eval-results.md")
+    ap.add_argument("--no-retrieval", action="store_true",
+                    help="skip the retrieval-quality pass (functional only)")
+    args = ap.parse_args()
+    print(run_eval(args.questions, args.out, retrieval=not args.no_retrieval))

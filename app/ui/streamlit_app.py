@@ -39,12 +39,16 @@ def stream_api(question: str, history: list[dict], api_url: str,
             client.close()
 
 
+def _md(text: str) -> str:
+    return str(text).replace("$", r"\$")   # Streamlit renders $...$ as LaTeX
+
+
 def render_trace(steps: list[dict], citations: list[dict], route: str,
                  funnel: dict | None = None) -> None:
     with st.expander("Agent trace", expanded=True):
         st.markdown(f"**Route:** `{route}`")
         for s in steps:
-            st.markdown(f"- **{s['node']}** ({s['duration_ms']} ms) — {s['summary']}")
+            st.markdown(f"- **{s['node']}** ({s['duration_ms']} ms) — {_md(s['summary'])}")
         if funnel:
             if funnel.get("cached"):
                 st.markdown("**Retrieval:** served from cache")
@@ -59,7 +63,7 @@ def render_trace(steps: list[dict], citations: list[dict], route: str,
             for c in citations:
                 st.markdown(
                     f"- {c.get('pub','?')} — {c.get('section','')} "
-                    f"(p.{c.get('page','?')}) — _{c.get('quote','')}_"
+                    f"(p.{c.get('page','?')}) — _{_md(c.get('quote',''))}_"
                 )
         if steps:
             st.bar_chart({s["node"]: s["duration_ms"] for s in steps})
@@ -93,7 +97,7 @@ def main() -> None:
         for ev in stream_api(prompt, st.session_state.history[:-1], settings.api_url):
             if ev["type"] == "step":
                 steps.append(ev)
-                live.write(f"✓ **{ev['node']}** ({ev['duration_ms']} ms) — {ev['summary']}")
+                live.write(f"✓ **{ev['node']}** ({ev['duration_ms']} ms) — {_md(ev['summary'])}")
             elif ev["type"] == "final":
                 final = ev
             elif ev["type"] == "error":
@@ -110,7 +114,8 @@ def main() -> None:
     answer = data.get("answer", "")
     if data.get("low_confidence"):
         answer = "⚠️ Low confidence.\n\n" + answer
-    st.chat_message("assistant").write(answer)
+    # Streamlit markdown renders `$...$` as LaTeX; tax answers are full of `$`.
+    st.chat_message("assistant").write(answer.replace("$", r"\$"))
     st.session_state.history.append({"role": "assistant", "content": answer})
     render_trace(steps, data.get("citations", []), data.get("route", "?"),
                  data.get("retrieval_funnel", {}))

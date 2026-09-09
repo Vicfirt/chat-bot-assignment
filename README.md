@@ -11,6 +11,11 @@ An Agentic RAG chatbot (LangGraph) that answers U.S. federal individual income
 tax questions grounded in IRS publications (Pub. 17, 501, 505) and performs
 deterministic federal tax estimates.
 
+**In a hurry?** [Install and run](#install-and-run) is two commands. Jump to:
+[Architecture](#architecture) · [Design rationale](#design-rationale-highlights)
+· [Evaluation & performance](#evaluation-and-performance--results) ·
+[Known limitations](#known-limitations)
+
 ## Where each requirement is met
 
 | Requirement | Implementation |
@@ -24,7 +29,7 @@ deterministic federal tax estimates.
 | Text data source, quality processing | IRS Pub. 17 / 501 / 505; SHA-pinned download + structure-aware chunking in `app/ingest/` |
 | Open-source / dummy LLM + justification | `app/llm/provider.py` (pluggable `ollama` / `dummy`); trade-off in [Design rationale](#design-rationale-highlights) |
 | Streamlit UI showing agent steps + RAG output | `app/ui/streamlit_app.py` — live SSE step panel, retrieval funnel, citations |
-| Containerized; Dockerfile mandatory | `Dockerfile` (models baked in) + `docker-compose.yml` (UI + API + Ollama) |
+| Containerized; Dockerfile mandatory | `Dockerfile` (embedding + reranker models baked in) + `docker-compose.yml` (UI + API + Ollama; a one-shot `model-pull` service fetches the LLM) |
 | Functional eval, 10–20 questions | `eval/questions.yaml` (15) + `eval/run_eval.py` → `docs/eval-results.md` |
 | Load test, 50–200 queries | `loadtest/run_load.py` (100) → `docs/loadtest-results.md` |
 | README: problem, architecture + rationale, results, install | this file |
@@ -106,17 +111,7 @@ programmatic use and the load test.
 
 ### Main graph (7 nodes)
 
-```
-triage --+-- rag_only ------------------------> retrieve ----------------+
-         |                                                               |
-         +-- needs_calc ----- plan ----------> calculate ----------------+--> synthesize --> guardrails --> validate --+
-         |                                                               |                                    ^        |
-         +-- rag_plus_calc -- plan --+--> retrieve --+  (parallel        |                                    |        |
-         |                           +--> calculate -+   fan-out, both --+                          retry --> retrieve  |
-         |                                                joins here)                                                   |
-         +-- out_of_scope --------------------------------------------------> synthesize -------------------------------+
-                                                                                                             end --> END
-```
+The [Architecture](#architecture) diagram above is the visual; the routing rules:
 
 - `rag_only` runs only `retrieve`; `needs_calc` runs only `calculate`;
   `rag_plus_calc` fans `plan` out to **both, running concurrently**, and they
@@ -172,10 +167,6 @@ dedicated pre/post model): input moderation, prompt-injection / jailbreak
 screening, an LLM-judge faithfulness check, rate limiting, and an abuse policy.
 
 ### RAG subgraph (separate compiled graph, `app/rag/subgraph.py`)
-
-```
-expand_query --> retrieve_candidates --> rerank --> grade_docs --(loop: broaden & retry | continue)--> assemble_context
-```
 
 Compiled node set (verified): `expand_query, retrieve_candidates, rerank,
 grade_docs, assemble_context` (plus `__start__` / `__end__`). Each node is one
@@ -334,11 +325,11 @@ quality — which is the point of the architecture: a 1b model routes and phrase
 the calculator and the grounding checks keep the substance correct.
 
 **`needs_calc` (pure calculation, no retrieval)** is validated at the node level
-in `tests/test_graph_triage.py` rather than in this end-to-end set. The spec
-allows evaluating "a single node or the entire workflow", and with a real small model the
-label is unstable on calc questions that resemble the `rag_plus_calc` examples;
-the triage guard deliberately biases every dollar-amount question toward
-`rag_plus_calc` so the returned figure always carries a citation. The calculator
+in `tests/test_graph_triage.py` rather than in this end-to-end set: with a real
+small model the label is unstable on calc questions that resemble the
+`rag_plus_calc` examples, and the triage guard deliberately biases every
+dollar-amount question toward `rag_plus_calc` so the returned figure always
+carries a citation. The calculator
 path itself is covered by `tests/test_tax_calculator.py` and by q08–q10.
 
 ### Retrieval quality
@@ -517,37 +508,37 @@ finishes server-side.
 
 ## Install and run
 
-Python 3.11. No paid APIs. `LLM_MODE=dummy` is the default for offline,
-reproducible runs; `LLM_MODE=ollama` needs the model pulled first.
+**Prerequisites:** Docker + Docker Compose, Python 3.11. No paid APIs, no API
+keys. ~2 GB free RAM for the `llama3.2:1b` model (not needed in `dummy` mode).
 
-### Prerequisites
-
-Docker + Docker Compose. ~2 GB free RAM for the `1b` model (not needed in
-`dummy` mode).
-
-### First run — reproducible / offline (recommended)
+### Step 1 — one-time: build the vector index
 
 ```bash
 cp .env.example .env
-make ingest                                            # build the vector index (one-time, needs internet)
-LLM_MODE=dummy make up                                 # UI :8501, API :8000 — deterministic stub LLM
+make ingest       # downloads IRS Pub. 17 / 501 / 505, builds data/chroma/  (needs internet, ~2 min)
 ```
 
-`make ingest` downloads IRS Pub. 17 / 501 / 505 and builds the embedded Chroma
-index under `data/chroma/`. It needs internet once; the SHA-256 of each PDF is
-pinned in `app/ingest/sources.yaml`. After that the stack runs fully offline,
-and `LLM_MODE=dummy` makes every answer deterministic — this is the path to
-reproduce the test suite and the retrieval eval.
+Each PDF's URL and SHA-256 are pinned in `app/ingest/sources.yaml`. After this
+the stack runs fully offline.
 
-### With the real model (for actual answers)
+### Step 2 — start the stack
 
 ```bash
-docker compose exec ollama ollama pull llama3.2:1b     # ~1.3 GB, one-time (model-pull does this too)
-make up                                                # LLM_MODE defaults to ollama
+make up            # UI on :8501, API on :8000
 ```
 
-Answers then depend on `llama3.2:1b` (non-deterministic, ~30 s/answer on CPU;
-`LLM_MODEL=llama3.2:3b` for better prose at ~10× the latency).
+`make up` builds the image (embedding + reranker models baked in), starts
+Ollama, and the one-shot `model-pull` service pulls `llama3.2:1b` (~1.3 GB, first
+run only) before the API comes up. Answers are then written by the real model —
+non-deterministic, ~30 s each on CPU.
+
+**Offline / reproducible variant:** `LLM_MODE=dummy make up` skips the model pull
+and the LLM entirely — every answer is a deterministic stub. This is the mode the
+test suite and the retrieval eval run in; use it to reproduce the numbers in
+[Evaluation](#evaluation-and-performance--results).
+
+Both modes: open <http://localhost:8501> for the chat UI, or POST to
+`http://localhost:8000/chat`. `make down` stops everything.
 
 ### Local (no Docker)
 
